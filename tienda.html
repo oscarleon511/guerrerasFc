@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tienda · Guerreras FC Cali</title>
+  <meta name="description" content="Inscripción, mensualidad y uniformes de Guerreras FC. Arma tu pedido y envíalo por WhatsApp al 314 677 7099.">
+  <meta name="theme-color" content="#39b0c4">
+  <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <a class="skip" href="#contenido">Saltar al contenido</a>
+  <header class="site-header">
+    <div class="topbar">
+      <div class="wrap">
+        <p>Cali, Colombia · Desde 2015</p>
+        <a href="tel:+573146777099">314 677 7099</a>
+      </div>
+    </div>
+    <div class="wrap nav-wrap">
+      <a class="brand" href="index.html">
+        <span class="brand-mark" aria-hidden="true">G</span>
+        <span>
+          <strong>Guerreras FC</strong>
+          <span>Fútbol femenino · Cali</span>
+        </span>
+      </a>
+      <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="site-nav">
+        <span class="sr-only">Abrir menú</span>
+        <span></span>
+      </button>
+      <nav class="site-nav" id="site-nav" aria-label="Principal">
+        <a href="index.html">Inicio</a>
+        <a href="sedes.html">Sedes</a>
+        <a href="nosotras.html">Nosotras</a>
+        <a href="patrocinadores.html">Patrocinadores</a>
+        <a href="tienda.html" aria-current="page">Tienda</a>
+        <a class="nav-cart" href="tienda.html#pedido" data-cart-count>Pedido</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="contenido">
+    <section class="section band-white">
+      <div class="wrap">
+        <header class="section-head">
+          <p class="index">Tienda</p>
+          <h2>Quiero ser Guerrera</h2>
+          <p>La inscripción está abierta a mujeres mayores de 18 años. El pedido de esta página no cobra: arma el mensaje y el equipo te confirma cupo, talla y pago.</p>
+        </header>
+        <div class="products">
+          <article class="product" data-id="inscripcion" data-name="Inscripción" data-price="70000">
+            <h3>Inscripción</h3>
+            <p class="amount">$70.000</p>
+            <p>El primer paso para entrar a la familia. Incluye la evaluación para ubicarte en la categoría A, B o C.</p>
+            <button class="btn" type="button" data-add>Agregar al pedido</button>
+          </article>
+          <article class="product" data-id="mensualidad" data-name="Mensualidad" data-price="96000">
+            <h3>Mensualidad</h3>
+            <p class="amount">$96.000</p>
+            <p>Entrenamientos de fútbol 6 y el partido amistoso de la semana en tu sede.</p>
+            <button class="btn" type="button" data-add>Agregar al pedido</button>
+          </article>
+          <article class="product" data-id="entrenamiento" data-name="Uniforme de entrenamiento" data-price="90000">
+            <h3>Uniforme de entrenamiento</h3>
+            <p class="amount">$90.000</p>
+            <p>Para las sesiones entre semana y el sábado. Indica la talla en la nota del pedido.</p>
+            <button class="btn" type="button" data-add>Agregar al pedido</button>
+          </article>
+          <article class="product" data-id="competencia" data-name="Uniforme de competencia" data-price="100000">
+            <h3>Uniforme de competencia</h3>
+            <p class="amount">$100.000</p>
+            <p>Para los partidos y los torneos. En las categorías de base, el uniforme del torneo lo aportan los aliados.</p>
+            <button class="btn" type="button" data-add>Agregar al pedido</button>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section band" id="pedido">
+      <div class="wrap grid-2">
+        <form class="cart" id="pedido-form">
+          <h2>Tu pedido</h2>
+          <div data-cart-list></div>
+          <p>Total de referencia: <strong data-cart-total>$0</strong></p>
+          <label class="field" for="sede">Sede de interés
+            <select id="sede" name="sede">
+              <option value="">Todavía no elijo</option>
+              <option>Norte · El Monumental</option>
+              <option>Sur 1 · Tiro de Esquina</option>
+              <option>Sur 2 · Cancha 5.11</option>
+            </select>
+          </label>
+          <label class="field" for="nota">Nota
+            <textarea id="nota" name="nota" rows="4" placeholder="Talla, categoría si ya la conoces, o una pregunta."></textarea>
+          </label>
+          <button class="btn btn-dark" type="button" data-send disabled>Enviar pedido por WhatsApp</button>
+        </form>
+        <div>
+          <h2>Cómo sigue</h2>
+          <ol>
+            <li>Agrega lo que necesitas. Puedes sumar varias unidades.</li>
+            <li>Elige sede y escribe tu talla.</li>
+            <li>El mensaje se abre en WhatsApp al 314 677 7099.</li>
+          </ol>
+          <p class="note">Estos valores salen de la guía de inscripción: $70.000, $96.000, $90.000 y $100.000. Confírmalos con el equipo, porque pueden cambiar.</p>
+          <p><a href="nosotras.html">Revisa las categorías A, B, C y Plus</a> antes de escribir, si quieres llegar con el nivel en mente.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap footer-grid">
+      <div>
+        <h2>Guerreras FC</h2>
+        <p>Familia, inclusión y fútbol para mujeres mayores de edad en Cali.</p>
+        <p><a href="tel:+573146777099">314 677 7099</a></p>
+      </div>
+      <div>
+        <h2>Mapa</h2>
+        <ul>
+          <li><a href="index.html">Inicio</a></li>
+          <li><a href="sedes.html">Sedes</a></li>
+          <li><a href="nosotras.html">Nosotras</a></li>
+          <li><a href="patrocinadores.html">Patrocinadores</a></li>
+          <li><a href="tienda.html">Tienda</a></li>
+        </ul>
+      </div>
+      <div>
+        <h2>Redes</h2>
+        <ul>
+          <li><a href="https://www.instagram.com/guerrerasfccali/" target="_blank" rel="noopener noreferrer">@guerrerasfccali</a></li>
+          <li><a href="https://www.instagram.com/guerrerasfc.cali/" target="_blank" rel="noopener noreferrer">@guerrerasfc.cali</a></li>
+          <li><a href="https://guerrerasfccali.com/beneficios-guerreras" target="_blank" rel="noopener noreferrer">Beneficios para las Guerreras</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="wrap legal">Guerreras FC · Cali, Colombia. Precios y horarios según la guía Sé parte de Guerreras. Confírmalos con el equipo antes de pagar.</div>
+  </footer>
+  <script src="js/main.js"></script>
+</body>
+</html>
