@@ -1,28 +1,29 @@
 (function () {
   var header = document.querySelector(".site-header");
   var toggle = document.querySelector(".nav-toggle");
-  var nav = document.querySelector(".site-nav");
   var KEY = "guerreras-pedido";
 
-  if (toggle && header && nav) {
+  function closeMenu() {
+    if (!header || !toggle) return;
+    header.classList.remove("is-open");
+    toggle.setAttribute("aria-expanded", "false");
+    var label = toggle.querySelector(".sr-only");
+    if (label) label.textContent = "Abrir menú";
+  }
+
+  if (toggle && header) {
     toggle.addEventListener("click", function () {
       var open = header.classList.toggle("is-open");
       toggle.setAttribute("aria-expanded", open ? "true" : "false");
       toggle.querySelector(".sr-only").textContent = open ? "Cerrar menú" : "Abrir menú";
     });
 
-    nav.addEventListener("click", function (event) {
-      if (event.target.closest("a")) {
-        header.classList.remove("is-open");
-        toggle.setAttribute("aria-expanded", "false");
-      }
+    header.addEventListener("click", function (event) {
+      if (event.target.closest(".menu-panel a, .site-nav a")) closeMenu();
     });
 
     document.addEventListener("keydown", function (event) {
-      if (event.key === "Escape") {
-        header.classList.remove("is-open");
-        toggle.setAttribute("aria-expanded", "false");
-      }
+      if (event.key === "Escape") closeMenu();
     });
   }
 
@@ -54,7 +55,7 @@
   function renderBadge(items) {
     var count = items.reduce(function (sum, item) { return sum + item.qty; }, 0);
     document.querySelectorAll("[data-cart-count]").forEach(function (node) {
-      node.textContent = count ? "Pedido (" + count + ")" : "Pedido";
+      node.textContent = count ? "(" + count + ")" : "";
     });
   }
 
