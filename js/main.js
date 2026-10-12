@@ -154,4 +154,21 @@
 
   renderBadge(load());
   renderCart(load());
+
+  var timeline = document.querySelector(".timeline");
+  if (timeline) {
+    timeline.addEventListener("click", function (event) {
+      var control = event.target.closest(".year, .timeline-dot");
+      if (!control) return;
+      var item = control.closest("li");
+      var select = !item.classList.contains("is-current");
+      timeline.querySelectorAll("li").forEach(function (entry) {
+        var on = select && entry === item;
+        entry.classList.toggle("is-current", on);
+        entry.querySelectorAll(".year, .timeline-dot").forEach(function (button) {
+          button.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+      });
+    });
+  }
 })();

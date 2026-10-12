@@ -12,6 +12,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/leaflet.css">
   <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
@@ -60,74 +61,61 @@
           <h2>Entrenamientos y canchas</h2>
           <p>Sesiones de fútbol 6 en cancha sintética. Si el clima se pone adverso, el entrenador puede cancelar la clase para cuidar a las jugadoras.</p>
         </header>
-        <div class="table-wrap">
-          <table>
-            <caption>Horario semanal</caption>
-            <thead>
-              <tr>
-                <th scope="col">Sede</th>
-                <th scope="col">Lunes</th>
-                <th scope="col">Martes</th>
-                <th scope="col">Sábado</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th scope="row">El Monumental · Norte</th>
-                <td>8:30 p.m.</td>
-                <td>—</td>
-                <td>4:00 p.m.</td>
-              </tr>
-              <tr>
-                <th scope="row">Tiro de Esquina · Sur 1</th>
-                <td>8:00 p.m.</td>
-                <td>—</td>
-                <td>4:00 p.m.</td>
-              </tr>
-              <tr>
-                <th scope="row">5.11 · Sur 2</th>
-                <td>—</td>
-                <td>8:00 p.m.</td>
-                <td>4:00 p.m.</td>
-              </tr>
-            </tbody>
-          </table>
+        <div class="cal is-week" data-calendar>
+          <div class="cal-bar">
+            <div class="cal-nav">
+              <button type="button" class="cal-step" data-cal-prev aria-label="Semana anterior">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M14.5 5.5 8 12l6.5 6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <p class="cal-title" data-cal-title aria-live="polite"></p>
+              <button type="button" class="cal-step" data-cal-next aria-label="Semana siguiente">
+                <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M9.5 5.5 16 12l-6.5 6.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button type="button" class="cal-today" data-cal-today>Hoy</button>
+            </div>
+            <div class="cal-views" role="group" aria-label="Vista del calendario">
+              <button type="button" data-cal-view="week" aria-pressed="true">Semana</button>
+              <button type="button" data-cal-view="month" aria-pressed="false">Mes</button>
+            </div>
+          </div>
+          <p class="cal-legend">
+            <span><i class="cal-swatch is-one" aria-hidden="true"></i> Un entrenamiento</span>
+            <span><i class="cal-swatch is-many" aria-hidden="true"></i> Varios entrenamientos</span>
+          </p>
+          <div class="cal-weekdays" data-cal-weekdays>
+            <span>Lun</span><span>Mar</span><span>Mié</span><span>Jue</span><span>Vie</span><span>Sáb</span><span>Dom</span>
+          </div>
+          <div class="cal-grid" data-cal-grid></div>
         </div>
+        <dialog class="cal-dialog" data-cal-dialog aria-labelledby="cal-dialog-title">
+          <div class="cal-dialog-head">
+            <h3 id="cal-dialog-title"></h3>
+            <button type="button" class="cal-close" data-cal-close aria-label="Cerrar">
+              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </button>
+          </div>
+          <div class="cal-events" data-cal-events></div>
+        </dialog>
       </div>
     </section>
 
     <section class="section band-white">
-      <div class="wrap grid-3">
-        <article class="venue" id="norte">
-          <header>
-            <h3>Norte</h3>
-            <span class="pill">Lunes y sábado</span>
-          </header>
-          <p><strong>Cancha El Monumental</strong></p>
-          <p>Av 3F Norte # 52<br>Dentro del Éxito de La Flora</p>
-          <p>Lunes 8:30 p.m.<br>Sábado 4:00 p.m.</p>
-          <a class="btn" href="https://www.google.com/maps/search/?api=1&amp;query=Cancha+El+Monumental+Av+3F+Norte+52+Exito+La+Flora+Cali" target="_blank" rel="noopener noreferrer">Abrir en el mapa</a>
-        </article>
-        <article class="venue" id="sur-1">
-          <header>
-            <h3>Sur 1</h3>
-            <span class="pill">Lunes y sábado</span>
-          </header>
-          <p><strong>Cancha Tiro de Esquina</strong></p>
-          <p>Cra 70 # 13-90<br>Al lado de Simon Parrilla</p>
-          <p>Lunes 8:00 p.m.<br>Sábado 4:00 p.m.</p>
-          <a class="btn" href="https://www.google.com/maps/search/?api=1&amp;query=Cancha+Tiro+de+Esquina+Cra+70+13-90+Cali" target="_blank" rel="noopener noreferrer">Abrir en el mapa</a>
-        </article>
-        <article class="venue" id="sur-2">
-          <header>
-            <h3>Sur 2</h3>
-            <span class="pill">Martes y sábado</span>
-          </header>
-          <p><strong>Cancha 5.11</strong></p>
-          <p>Cra 56 # 12a-01<br>Entre la autopista y Paso Ancho</p>
-          <p>Martes 8:00 p.m.<br>Sábado 4:00 p.m.</p>
-          <a class="btn" href="https://www.google.com/maps/search/?api=1&amp;query=Cancha+5.11+Cra+56+12a-01+Cali" target="_blank" rel="noopener noreferrer">Abrir en el mapa</a>
-        </article>
+      <div class="wrap">
+        <div class="sede-map-block">
+          <span id="norte" class="sede-jump"></span>
+          <span id="sur-1" class="sede-jump"></span>
+          <span id="sur-2" class="sede-jump"></span>
+          <div class="sede-map" data-sede-map role="region" aria-label="Mapa de las sedes">
+            <p class="sede-map-status">Cargando el mapa…</p>
+          </div>
+        </div>
+        <noscript>
+          <ul class="sede-fallback">
+            <li><strong>Norte · Cancha El Monumental.</strong> Av 3F Norte # 52, dentro del Éxito de La Flora.</li>
+            <li><strong>Sur 1 · Cancha Tiro de Esquina.</strong> Cra 70 # 13-90, al lado de Simon Parrilla.</li>
+            <li><strong>Sur 2 · Cancha 5.11.</strong> Cra 56 # 12a-01, entre la autopista y Paso Ancho.</li>
+          </ul>
+        </noscript>
       </div>
     </section>
 
@@ -177,5 +165,7 @@
     <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M7.2 3.8h2.1c.4 0 .7.3.8.6l.8 2.4a.9.9 0 0 1-.2.9L9.4 9.1a12 12 0 0 0 5.5 5.5l1.4-1.3a.9.9 0 0 1 .9-.2l2.4.8c.3.1.6.4.6.8v2.1a1.6 1.6 0 0 1-1.7 1.6A15.2 15.2 0 0 1 5.6 5.5a1.6 1.6 0 0 1 1.6-1.7Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
   </a>
   <script src="js/main.js"></script>
+  <script src="js/calendar.js"></script>
+  <script src="js/map.js"></script>
 </body>
 </html>

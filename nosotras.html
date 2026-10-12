@@ -54,12 +54,19 @@
 
   <main id="contenido">
     <section class="section band-white">
-      <div class="wrap">
-        <header class="section-head">
-          <p class="index">Nosotras</p>
-          <h2>Una familia que juega en serio</h2>
-          <p>Guerreras FC nació en 2015 con cerca de 15 jugadoras. Creció hasta convertirse en el equipo de fútbol femenino amateur más grande de Colombia, con sedes en el norte y en el sur de Cali.</p>
-        </header>
+      <div class="wrap portrait-story">
+        <article class="portrait-split">
+          <div class="portrait-copy">
+            <p class="index">Nosotras</p>
+            <h2>Una familia que juega en serio</h2>
+            <p>Guerreras FC nació en 2015 con cerca de 15 jugadoras. Creció hasta convertirse en el equipo de fútbol femenino amateur más grande de Colombia, con sedes en el norte y en el sur de Cali.</p>
+          </div>
+          <figure>
+            <img src="assets/jugadora-balon.jpg" width="255" height="577" alt="Jugadora de Guerreras FC con uniforme turquesa y negro, sosteniendo el balón con las dos manos." loading="lazy" decoding="async">
+          </figure>
+        </article>
+      </div>
+      <div class="wrap after-portrait">
         <div class="grid-2">
           <article class="card">
             <h3>Visión</h3>
@@ -73,14 +80,14 @@
       </div>
     </section>
 
-    <section class="section band">
+    <section class="section band-white">
       <div class="wrap">
         <header class="section-head">
           <p class="index">Categorías</p>
           <h2>Un lugar para cada nivel</h2>
           <p>Tres categorías de base y tres categorías Plus, sin costo adicional. En todas hay torneos.</p>
         </header>
-        <div class="grid-3">
+        <div class="grid-3 level-cards">
           <article class="card">
             <p class="pill">Base</p>
             <h3>Categoría C</h3>
@@ -97,17 +104,17 @@
             <p>Jugadoras con habilidad y disciplina. Un entorno más competitivo para subir el nivel.</p>
           </article>
           <article class="card">
-            <p class="pill">Plus</p>
+            <p class="pill is-plus">Plus</p>
             <h3>La Selección</h3>
             <p>El grupo élite: las jugadoras más talentosas de la categoría A de cada sede.</p>
           </article>
           <article class="card">
-            <p class="pill">Plus</p>
+            <p class="pill is-plus">Plus</p>
             <h3>All Stars</h3>
             <p>Embajadoras en redes. Talento para el juego y ganas de mostrar lo que es Guerreras.</p>
           </article>
           <article class="card">
-            <p class="pill">Plus</p>
+            <p class="pill is-plus">Plus</p>
             <h3>Fútbol 11</h3>
             <p>Cupo por solicitud y mérito. Hace falta dedicación y un nivel alto de juego.</p>
           </article>
@@ -122,23 +129,23 @@
           <h2>De 15 jugadoras a un movimiento</h2>
         </header>
         <ol class="timeline">
-          <li><p class="year">2015</p><p>Nace Guerreras FC en Cali con unas 15 jugadoras y se inaugura la sede Norte.</p></li>
-          <li><p class="year">2016</p><p>Llegamos a 80 alumnas y nos convertimos en el equipo femenino de mayores con más jugadoras del suroccidente colombiano.</p></li>
-          <li><p class="year">2017</p><p>El proyecto sale en televisión, radio y prensa. Grabamos nuestra canción y su video.</p></li>
-          <li><p class="year">2018</p><p>Se inaugura la sede de Pance y la Copa Guerreras FC, con más de 10 marcas. El torneo amateur femenino de mayores más destacado de la región.</p></li>
-          <li><p class="year">2019</p><p>Gira del proyecto El Fútbol es Cosa de Mujeres.</p></li>
-          <li><p class="year">2020</p><p>Durante la pandemia hubo clases virtuales y entrevistas en vivo con jugadoras y figuras públicas.</p></li>
-          <li><p class="year">2021</p><p>150 jugadoras: el equipo femenino aficionado de mayores con más alumnas de Latinoamérica. Más de 25 mil seguidoras en Instagram, 18 mil en TikTok y 16 mil en Facebook.</p></li>
-          <li><p class="year">2022</p><p>Más de 35 marcas se suman, entre ellas Gatorade, La Montaña Agromercados, CC Elite, Mix 101.5, Tony 2 y Vicbay.</p></li>
-          <li><p class="year">2023</p><p>Llegamos al título número 18 y lanzamos la segunda edición del calendario impreso 2024.</p></li>
+          <li><button type="button" class="year" aria-pressed="false">2015</button><button type="button" class="timeline-dot" aria-label="Marcar 2015" aria-pressed="false"></button><p>Nace Guerreras FC en Cali con unas 15 jugadoras y se inaugura la sede Norte.</p></li>
+          <li><button type="button" class="year" aria-pressed="false">2016</button><button type="button" class="timeline-dot" aria-label="Marcar 2016" aria-pressed="false"></button><p>Llegamos a 80 alumnas y nos convertimos en el equipo femenino de mayores con más jugadoras del suroccidente colombiano.</p></li>
+          <li><button type="button" class="year" aria-pressed="false">2017</button><button type="button" class="timeline-dot" aria-label="Marcar 2017" aria-pressed="false"></button><p>El proyecto sale en televisión, radio y prensa. Grabamos nuestra canción y su video.</p></li>
+          <li><button type="button" class="year" aria-pressed="false">2018</button><button type="button" class="timeline-dot" aria-label="Marcar 2018" aria-pressed="false"></button><p>Se inaugura la sede de Pance y la Copa Guerreras FC, con más de 10 marcas. El torneo amateur femenino de mayores más destacado de la región.</p></li>
+          <li><button type="button" class="year" aria-pressed="false">2019</button><button type="button" class="timeline-dot" aria-label="Marcar 2019" aria-pressed="false"></button><p>Gira del proyecto El Fútbol es Cosa de Mujeres.</p></li>
+          <li><button type="button" class="year" aria-pressed="false">2020</button><button type="button" class="timeline-dot" aria-label="Marcar 2020" aria-pressed="false"></button><p>Durante la pandemia hubo clases virtuales y entrevistas en vivo con jugadoras y figuras públicas.</p></li>
+          <li><button type="button" class="year" aria-pressed="false">2021</button><button type="button" class="timeline-dot" aria-label="Marcar 2021" aria-pressed="false"></button><p>150 jugadoras: el equipo femenino aficionado de mayores con más alumnas de Latinoamérica. Más de 25 mil seguidoras en Instagram, 18 mil en TikTok y 16 mil en Facebook.</p></li>
+          <li><button type="button" class="year" aria-pressed="false">2022</button><button type="button" class="timeline-dot" aria-label="Marcar 2022" aria-pressed="false"></button><p>Más de 35 marcas se suman, entre ellas Gatorade, La Montaña Agromercados, CC Elite, Mix 101.5, Tony 2 y Vicbay.</p></li>
+          <li><button type="button" class="year" aria-pressed="false">2023</button><button type="button" class="timeline-dot" aria-label="Marcar 2023" aria-pressed="false"></button><p>Llegamos al título número 18 y lanzamos la segunda edición del calendario impreso 2024.</p></li>
         </ol>
       </div>
     </section>
 
-    <section class="section band-ice">
+    <section class="section band-white">
       <div class="wrap">
         <article class="quote">
-          <img src="assets/alex-rueda.jpg" width="302" height="284" alt="Alex Rueda, manager de Guerreras FC, con la camiseta del equipo.">
+          <img src="assets/alex-rueda.jpg" width="509" height="553" alt="Alex Rueda, manager de Guerreras FC, con la camiseta negra del equipo." loading="lazy" decoding="async">
           <blockquote>
             <p>Ya sea que estés pisando el campo por primera vez o que traigas tu experiencia, vas a ser valorada, apreciada y bienvenida con los brazos abiertos. La familia de Guerreras FC te espera.</p>
             <cite>Alex Rueda, manager de Guerreras FC</cite>
