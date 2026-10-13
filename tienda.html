@@ -67,7 +67,7 @@
             <h3>Inscripción</h3>
             <p class="amount">$70.000</p>
             <p>El primer paso para entrar a la familia. Incluye la evaluación para ubicarte en la categoría A, B o C.</p>
-            <button class="btn" type="button" data-add>Agregar al pedido</button>
+            <button class="btn" type="button" data-join>Agregar al pedido</button>
           </article>
           <article class="product" data-id="mensualidad" data-name="Mensualidad" data-price="96000">
             <h3>Mensualidad</h3>
@@ -163,6 +163,39 @@
   <a class="call-float" href="https://wa.me/573146777099?text=Estoy%20interesada%20en%20ser%20parte%20de%20Guerreras%20FC" target="_blank" rel="noopener noreferrer" aria-label="Escribir por WhatsApp: Estoy interesada en ser parte de Guerreras FC">
     <svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true"><path d="M7.2 3.8h2.1c.4 0 .7.3.8.6l.8 2.4a.9.9 0 0 1-.2.9L9.4 9.1a12 12 0 0 0 5.5 5.5l1.4-1.3a.9.9 0 0 1 .9-.2l2.4.8c.3.1.6.4.6.8v2.1a1.6 1.6 0 0 1-1.7 1.6A15.2 15.2 0 0 1 5.6 5.5a1.6 1.6 0 0 1 1.6-1.7Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
   </a>
+  <dialog class="join-dialog" data-join-dialog aria-labelledby="join-title">
+    <form class="join-card" id="join-form">
+      <div class="join-head">
+        <h2 id="join-title">Quiero ser Guerrera</h2>
+        <p class="join-cart" data-join-cart>
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M6 7h15l-1.6 8.2a1.5 1.5 0 0 1-1.5 1.2H9.2a1.5 1.5 0 0 1-1.5-1.3L6 7Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M6 7 5.2 4.5H3" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="9" cy="19.2" r="1.2" fill="currentColor"/><circle cx="17" cy="19.2" r="1.2" fill="currentColor"/></svg>
+          <span data-join-count>0</span>
+          <span class="sr-only">artículos en el pedido</span>
+        </p>
+      </div>
+      <label class="field" for="join-sede">Sede de interés
+        <select id="join-sede" name="sede" data-join-sede>
+          <option value="">Elige una sede</option>
+          <option>Norte · El Monumental</option>
+          <option>Sur 1 · Tiro de Esquina</option>
+          <option>Sur 2 · Cancha 5.11</option>
+        </select>
+      </label>
+      <fieldset class="pay-methods">
+        <legend>Método de pago</legend>
+        <label><input type="radio" name="pago" value="Tarjeta de crédito"> Tarjeta de crédito</label>
+        <label><input type="radio" name="pago" value="PSE"> PSE</label>
+        <label><input type="radio" name="pago" value="Nequi"> Nequi</label>
+        <label><input type="radio" name="pago" value="Daviplata"> Daviplata</label>
+        <label><input type="radio" name="pago" value="Pago en persona"> Pago en persona</label>
+      </fieldset>
+      <p class="note">Con tarjeta, PSE, Nequi o Daviplata solo eliges el medio. El equipo confirma el cobro; no escribas los datos de la tarjeta aquí.</p>
+      <div class="join-actions">
+        <button class="btn btn-ghost" type="button" data-join-cancel>Cancelar</button>
+        <button class="btn" type="button" data-join-shop disabled>Seguir comprando</button>
+      </div>
+    </form>
+  </dialog>
   <script src="js/main.js"></script>
 </body>
 </html>

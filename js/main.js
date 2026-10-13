@@ -2,6 +2,7 @@
   var header = document.querySelector(".site-header");
   var toggle = document.querySelector(".nav-toggle");
   var KEY = "guerreras-pedido";
+  var EXTRA = "guerreras-pedido-extra";
 
   function closeMenu() {
     if (!header || !toggle) return;
@@ -145,7 +146,11 @@
       });
       var text = "Hola Guerreras FC, quiero ser parte del equipo. Mi pedido de referencia es:\n" +
         lines.join("\n");
+      var extra = {};
+      try { extra = JSON.parse(localStorage.getItem(EXTRA)) || {}; } catch (error) { extra = {}; }
+      if (sede && !sede.value && extra.sede) sede.value = extra.sede;
       if (sede && sede.value) text += "\nSede: " + sede.value;
+      if (extra.pago) text += "\nPago: " + extra.pago;
       if (nota && nota.value.trim()) text += "\nNota: " + nota.value.trim();
       text += "\n¿Me confirman cupo, talla y cómo realizar el pago?";
       window.open("https://wa.me/573146777099?text=" + encodeURIComponent(text), "_blank", "noopener");
@@ -154,6 +159,62 @@
 
   renderBadge(load());
   renderCart(load());
+
+  var joinDialog = document.querySelector("[data-join-dialog]");
+  var joinOpen = document.querySelector("[data-join]");
+  if (joinDialog && joinOpen) {
+    var joinForm = document.querySelector("#join-form");
+    var joinSede = joinDialog.querySelector("[data-join-sede]");
+    var joinShop = joinDialog.querySelector("[data-join-shop]");
+    var joinCount = joinDialog.querySelector("[data-join-count]");
+    var pageSede = document.querySelector("#sede");
+
+    function orderCount() {
+      return load().reduce(function (sum, item) { return sum + item.qty; }, 0);
+    }
+
+    function paintJoinCount() {
+      joinCount.textContent = String(orderCount());
+    }
+
+    try {
+      var saved = JSON.parse(localStorage.getItem(EXTRA)) || {};
+      if (pageSede && saved.sede) pageSede.value = saved.sede;
+    } catch (error) {}
+
+    joinOpen.addEventListener("click", function () {
+      joinForm.reset();
+      joinShop.disabled = true;
+      paintJoinCount();
+      joinDialog.showModal();
+    });
+
+    joinForm.addEventListener("change", function (event) {
+      if (event.target.name !== "pago") return;
+      joinShop.disabled = event.target.value !== "Pago en persona";
+    });
+
+    joinDialog.querySelector("[data-join-cancel]").addEventListener("click", function () {
+      joinDialog.close();
+    });
+
+    joinDialog.addEventListener("click", function (event) {
+      if (event.target === joinDialog) joinDialog.close();
+    });
+
+    joinShop.addEventListener("click", function () {
+      if (joinShop.disabled) return;
+      var card = joinOpen.closest("[data-id]");
+      addItem(card.dataset.id, card.dataset.name, Number(card.dataset.price));
+      var pago = joinForm.querySelector("input[name='pago']:checked");
+      var extra = { sede: joinSede.value, pago: pago ? pago.value : "" };
+      try { localStorage.setItem(EXTRA, JSON.stringify(extra)); } catch (error) {}
+      if (pageSede && extra.sede) pageSede.value = extra.sede;
+      paintJoinCount();
+      joinDialog.close();
+      window.location.href = "tienda.html";
+    });
+  }
 
   var heroLogo = document.querySelector(".hero-logo");
   if (heroLogo) {
