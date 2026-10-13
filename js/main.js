@@ -155,6 +155,19 @@
   renderBadge(load());
   renderCart(load());
 
+  var heroLogo = document.querySelector(".hero-logo");
+  if (heroLogo) {
+    var seen = false;
+    try { seen = sessionStorage.getItem("guerreras-logo-spin") === "1"; } catch (error) { seen = false; }
+    if (!seen) {
+      heroLogo.classList.add("is-kick");
+      try { sessionStorage.setItem("guerreras-logo-spin", "1"); } catch (error) {}
+      heroLogo.addEventListener("animationend", function () {
+        heroLogo.classList.remove("is-kick");
+      });
+    }
+  }
+
   var timeline = document.querySelector(".timeline");
   if (timeline) {
     timeline.addEventListener("click", function (event) {
