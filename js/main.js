@@ -160,38 +160,137 @@
   renderBadge(load());
   renderCart(load());
 
+  if (!document.querySelector("[data-join-dialog]")) {
+    document.body.insertAdjacentHTML("beforeend",
+      '<dialog class="join-dialog" data-join-dialog aria-labelledby="join-title">' +
+        '<form class="join-card" id="join-form">' +
+          '<div class="join-body">' +
+            '<h2 id="join-title">Quiero ser Guerrera</h2>' +
+            '<p class="join-lead">Gracias por interesarte en ser parte de nuestro equipo. Ten en cuenta que el primer paso para entrar a la familia incluye la evaluación para ubicarte en la categoría A, B o C. Por favor provee la siguiente información.</p>' +
+            '<label class="field" for="join-sede">Sede de interés' +
+              '<select id="join-sede" name="sede" data-join-sede required>' +
+                '<option value="">Elige una sede</option>' +
+                '<option>Norte · El Monumental</option>' +
+                '<option>Sur 1 · Tiro de Esquina</option>' +
+                '<option>Sur 2 · Cancha 5.11</option>' +
+              '</select>' +
+              '<span class="field-error" data-error-for="join-sede"></span>' +
+            '</label>' +
+            '<label class="field" for="join-name">Nombre' +
+              '<input id="join-name" name="nombre" type="text" autocomplete="name" required>' +
+              '<span class="field-error" data-error-for="join-name"></span>' +
+            '</label>' +
+            '<label class="field" for="join-phone">Teléfono' +
+              '<input id="join-phone" name="telefono" type="tel" autocomplete="tel" inputmode="tel" required>' +
+              '<span class="field-error" data-error-for="join-phone"></span>' +
+            '</label>' +
+            '<label class="field" for="join-age">Edad' +
+              '<input id="join-age" name="edad" type="number" inputmode="numeric" min="18" step="1" required aria-describedby="join-age-error">' +
+              '<span class="field-error" id="join-age-error" data-error-for="join-age"></span>' +
+            '</label>' +
+            '<label class="field" for="join-notes">Notas' +
+              '<textarea id="join-notes" name="notas" rows="4" maxlength="4000" placeholder="Déjanos saber más sobre ti" required></textarea>' +
+              '<span class="char-count" data-note-count>0 / 4000</span>' +
+              '<span class="field-error" data-error-for="join-notes"></span>' +
+            '</label>' +
+          '</div>' +
+          '<div class="join-actions">' +
+            '<button class="btn btn-ghost" type="button" data-join-cancel>Cancelar</button>' +
+            '<button class="btn" type="submit" disabled>Quiero ser Guerrera</button>' +
+          '</div>' +
+        '</form>' +
+      '</dialog>' +
+      '<dialog class="join-dialog" data-join-thanks>' +
+        '<div class="join-card">' +
+          '<p class="join-thanks">Hemos recibido tu mensaje, un entrenador te contactará lo más pronto posible.</p>' +
+          '<div class="join-actions">' +
+            '<button class="btn" type="button" data-thanks-close>Cerrar</button>' +
+          '</div>' +
+        '</div>' +
+      '</dialog>'
+    );
+  }
+
   var joinDialog = document.querySelector("[data-join-dialog]");
-  var joinOpen = document.querySelector("[data-join]");
-  if (joinDialog && joinOpen) {
+  var joinButtons = document.querySelectorAll("[data-join]");
+  if (joinDialog && joinButtons.length) {
     var joinForm = document.querySelector("#join-form");
     var joinSede = joinDialog.querySelector("[data-join-sede]");
-    var joinShop = joinDialog.querySelector("[data-join-shop]");
-    var joinCount = joinDialog.querySelector("[data-join-count]");
+    var joinName = document.querySelector("#join-name");
+    var joinPhone = document.querySelector("#join-phone");
+    var joinAge = document.querySelector("#join-age");
+    var joinNotes = document.querySelector("#join-notes");
+    var noteCount = joinDialog.querySelector("[data-note-count]");
+    var joinSend = joinForm.querySelector('button[type="submit"]');
+    var thanks = document.querySelector("[data-join-thanks]");
     var pageSede = document.querySelector("#sede");
-
-    function orderCount() {
-      return load().reduce(function (sum, item) { return sum + item.qty; }, 0);
-    }
-
-    function paintJoinCount() {
-      joinCount.textContent = String(orderCount());
-    }
+    var AGE_MSG = "La inscripción está abierta a mujeres mayores de 18 años en adelante";
 
     try {
       var saved = JSON.parse(localStorage.getItem(EXTRA)) || {};
       if (pageSede && saved.sede) pageSede.value = saved.sede;
     } catch (error) {}
 
-    joinOpen.addEventListener("click", function () {
-      joinForm.reset();
-      joinShop.disabled = true;
-      paintJoinCount();
-      joinDialog.showModal();
+    function showError(input, message) {
+      var error = joinForm.querySelector("[data-error-for='" + input.id + "']");
+      input.classList.toggle("is-invalid", Boolean(message));
+      if (message) input.setAttribute("aria-invalid", "true");
+      else input.removeAttribute("aria-invalid");
+      if (!error) return;
+      error.textContent = message || "";
+      error.classList.toggle("is-on", Boolean(message));
+    }
+
+    function ageMessage(value) {
+      if (!String(value).trim()) return "Completa este campo.";
+      var age = Number(value);
+      if (!Number.isFinite(age) || age < 18) return AGE_MSG;
+      return "";
+    }
+
+    function paintCount() {
+      noteCount.textContent = joinNotes.value.length + " / 4000";
+    }
+
+    function formReady() {
+      var age = Number(joinAge.value);
+      return Boolean(joinSede.value) &&
+        Boolean(joinName.value.trim()) &&
+        Boolean(joinPhone.value.trim()) &&
+        Boolean(joinNotes.value.trim()) &&
+        Number.isFinite(age) &&
+        age >= 18;
+    }
+
+    function paintSend() {
+      joinSend.disabled = !formReady();
+    }
+
+    joinForm.addEventListener("input", function () {
+      paintCount();
+      paintSend();
+    });
+    joinForm.addEventListener("change", paintSend);
+
+    joinAge.addEventListener("input", function () {
+      if (!joinAge.value.trim()) {
+        showError(joinAge, "");
+        return;
+      }
+      showError(joinAge, ageMessage(joinAge.value));
     });
 
-    joinForm.addEventListener("change", function (event) {
-      if (event.target.name !== "pago") return;
-      joinShop.disabled = event.target.value !== "Pago en persona";
+    joinButtons.forEach(function (button) {
+      button.addEventListener("click", function () {
+        closeMenu();
+        joinForm.reset();
+        joinForm.querySelectorAll(".is-invalid").forEach(function (input) {
+          showError(input, "");
+        });
+        paintCount();
+        paintSend();
+        joinDialog.showModal();
+      });
     });
 
     joinDialog.querySelector("[data-join-cancel]").addEventListener("click", function () {
@@ -202,17 +301,42 @@
       if (event.target === joinDialog) joinDialog.close();
     });
 
-    joinShop.addEventListener("click", function () {
-      if (joinShop.disabled) return;
-      var card = joinOpen.closest("[data-id]");
-      addItem(card.dataset.id, card.dataset.name, Number(card.dataset.price));
-      var pago = joinForm.querySelector("input[name='pago']:checked");
-      var extra = { sede: joinSede.value, pago: pago ? pago.value : "" };
-      try { localStorage.setItem(EXTRA, JSON.stringify(extra)); } catch (error) {}
-      if (pageSede && extra.sede) pageSede.value = extra.sede;
-      paintJoinCount();
+    joinForm.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var fields = [
+        [joinSede, joinSede.value ? "" : "Completa este campo."],
+        [joinName, joinName.value.trim() ? "" : "Completa este campo."],
+        [joinPhone, joinPhone.value.trim() ? "" : "Completa este campo."],
+        [joinAge, ageMessage(joinAge.value)],
+        [joinNotes, joinNotes.value.trim() ? "" : "Completa este campo."]
+      ];
+      var firstInvalid = null;
+      fields.forEach(function (pair) {
+        showError(pair[0], pair[1]);
+        if (pair[1] && !firstInvalid) firstInvalid = pair[0];
+      });
+      if (firstInvalid) {
+        firstInvalid.focus();
+        return;
+      }
+
+      var text = "Hola Alex Rueda, quiero ser parte de Guerreras FC.\n\n" +
+        "Nombre: " + joinName.value.trim() + "\n" +
+        "Teléfono: " + joinPhone.value.trim() + "\n" +
+        "Edad: " + joinAge.value.trim() + "\n" +
+        "Sede: " + joinSede.value + "\n" +
+        "Notas: " + joinNotes.value.trim();
+      window.open("https://wa.me/573146777099?text=" + encodeURIComponent(text), "_blank", "noopener");
       joinDialog.close();
-      window.location.href = "tienda.html";
+      thanks.showModal();
+    });
+
+    thanks.querySelector("[data-thanks-close]").addEventListener("click", function () {
+      thanks.close();
+    });
+
+    thanks.addEventListener("click", function (event) {
+      if (event.target === thanks) thanks.close();
     });
   }
 
