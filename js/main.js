@@ -94,17 +94,12 @@
     ["xl", "XL"]
   ];
   var KIT = "El uniforme incluye camiseta, pantaloneta y medias. El número de la camiseta se acuerda con el entrenador.";
-  var ID_ERROR = "Guerreras id enter seems to be incorrect, please try again";
   var showProblems = false;
   var refreshSend = function () {};
   var paintInscripcion = function () {};
 
   function isUniform(id) {
     return id === "entrenamiento" || id === "competencia";
-  }
-
-  function validGuerrerasId(value) {
-    return /^\d{4,10}$/.test(String(value).trim());
   }
 
   function addItem(id, name, price) {
@@ -137,10 +132,6 @@
     if (items.some(function (item) { return item.id === "inscripcion"; })) return;
     items.push({ id: "inscripcion", name: "Inscripción", price: 70000, qty: 1, size: "" });
     save(items);
-  }
-
-  function removeInscripcion() {
-    save(load().filter(function (item) { return item.id !== "inscripcion"; }));
   }
 
   function renderCart(items) {
@@ -239,12 +230,6 @@
     });
 
     var pedidoName = document.querySelector("#pedido-name");
-    var memberSwitch = document.querySelector("#member-switch");
-    var memberLabel = document.querySelector("#member-switch-label");
-    var existingPlayer = document.querySelector("#existing-player");
-    var pedidoId = document.querySelector("#pedido-id");
-    var idCheck = document.querySelector("#id-check");
-    var idError = document.querySelector("#id-error");
     var nameError = form.querySelector("[data-error-for='pedido-name']");
     var nota = document.querySelector("#nota");
     var notaCount = form.querySelector("[data-nota-count]");
@@ -252,25 +237,10 @@
     var orderSedeBtn = document.querySelector("#sede-btn");
     var orderSedeLabel = document.querySelector("[data-order-sede-label]");
     var orderSedeList = document.querySelector("#sede-list");
-    var idStatus = "";
 
     function paintClear(input) {
       var clear = form.querySelector("[data-clear-for='" + input.id + "']");
       if (clear) clear.classList.toggle("is-on", input.value.length >= 1);
-    }
-
-    function paintId() {
-      var has = pedidoId.value.length >= 1;
-      idCheck.disabled = !has;
-      idCheck.classList.toggle("is-valid", idStatus === "valid");
-      idCheck.classList.toggle("is-invalid", idStatus === "invalid");
-      var message = idStatus === "invalid" ? ID_ERROR : "";
-      idError.textContent = message;
-      idError.classList.toggle("is-on", Boolean(message));
-      pedidoId.classList.toggle("is-invalid", Boolean(message));
-      if (message) pedidoId.setAttribute("aria-invalid", "true");
-      else pedidoId.removeAttribute("aria-invalid");
-      paintClear(pedidoId);
     }
 
     function paintName() {
@@ -285,10 +255,6 @@
       notaCount.textContent = nota.value.length + " / 4000";
     }
 
-    function existingOn() {
-      return memberSwitch.getAttribute("aria-checked") === "true";
-    }
-
     function hasInscripcion() {
       return load().some(function (item) { return item.id === "inscripcion"; });
     }
@@ -296,7 +262,7 @@
     paintInscripcion = function () {
       var button = document.querySelector("#add-inscripcion");
       if (!button) return;
-      button.hidden = existingOn() || hasInscripcion();
+      button.hidden = hasInscripcion();
     };
 
     refreshSend = function () {
@@ -304,31 +270,13 @@
       if (!send) return;
       var items = load();
       var missingSize = items.some(function (item) { return isUniform(item.id) && !item.size; });
-      var memberOk = !existingOn() || idStatus === "valid";
-      send.disabled = !pedidoName.value.trim() || !memberOk || missingSize || !sede.value || !nota.value.trim() || !items.length;
+      send.disabled = !pedidoName.value.trim() || missingSize || !sede.value || !nota.value.trim() || !items.length;
     };
-
-    memberSwitch.addEventListener("click", function () {
-      var on = !existingOn();
-      memberSwitch.setAttribute("aria-checked", on ? "true" : "false");
-      memberLabel.textContent = on ? "Jugadora existente" : "Nueva integrante";
-      existingPlayer.hidden = !on;
-      if (!on) idStatus = "";
-      if (on && hasInscripcion()) removeInscripcion();
-      paintId();
-      paintInscripcion();
-      refreshSend();
-    });
 
     document.querySelector("#add-inscripcion").addEventListener("click", addInscripcion);
 
     pedidoName.addEventListener("input", function () {
       paintName();
-      refreshSend();
-    });
-    pedidoId.addEventListener("input", function () {
-      idStatus = "";
-      paintId();
       refreshSend();
     });
     nota.addEventListener("input", function () {
@@ -373,7 +321,6 @@
     });
     paintOrderSede();
     paintName();
-    paintId();
     paintNota();
     paintInscripcion();
     refreshSend();
@@ -383,18 +330,9 @@
       if (!clear) return;
       var input = document.getElementById(clear.getAttribute("data-clear-for"));
       input.value = "";
-      if (input === pedidoId) idStatus = "";
       paintName();
-      paintId();
       refreshSend();
       input.focus();
-    });
-
-    idCheck.addEventListener("click", function () {
-      if (idCheck.disabled) return;
-      idStatus = validGuerrerasId(pedidoId.value) ? "valid" : "invalid";
-      paintId();
-      refreshSend();
     });
 
     document.body.insertAdjacentHTML("beforeend",
@@ -434,9 +372,6 @@
       return {
         items: load(),
         name: pedidoName.value.trim(),
-        existing: existingOn(),
-        guerrerasId: pedidoId.value.trim(),
-        idOk: !existingOn() || idStatus === "valid",
         sede: sede.value,
         nota: nota.value.trim()
       };
@@ -444,12 +379,10 @@
 
     function orderProblems(order) {
       var missingSize = order.items.some(function (item) { return isUniform(item.id) && !item.size; });
-      var memberOk = !order.existing || order.idOk;
-      return !order.name || !memberOk || missingSize || !order.sede || !order.nota || !order.items.length;
+      return !order.name || missingSize || !order.sede || !order.nota || !order.items.length;
     }
 
     function paintOrder(order) {
-      var member = order.existing ? "Jugadora existente · ID " + order.guerrerasId : "Nueva integrante";
       var lines = order.items.map(function (item) {
         var detail = item.qty + " × " + money(item.price);
         if (isUniform(item.id)) detail += " · Talla " + sizeLabel(item.size);
@@ -461,7 +394,6 @@
       var noteBlock = order.nota ? '<div class="order-block"><p class="order-label">Nota</p><p>' + escapeHtml(order.nota) + "</p></div>" : "";
       orderSummary.innerHTML =
         '<div class="order-block"><p class="order-label">Nombre completo</p><p>' + escapeHtml(order.name) + "</p></div>" +
-        '<div class="order-block"><p class="order-label">Integrante</p><p>' + escapeHtml(member) + "</p></div>" +
         '<p class="cart-heading">Artículos</p><div class="cart-items">' + lines + "</div>" +
         '<p class="cart-total">Total de referencia <strong>' + money(sum) + "</strong></p>" +
         '<div class="order-block"><p class="order-label">Sede de interés o dónde recoger el pedido</p><p>' + sedeText + "</p></div>" +
@@ -475,9 +407,7 @@
       });
       var sum = order.items.reduce(function (acc, item) { return acc + item.price * item.qty; }, 0);
       var text = "Hola Guerreras FC, quiero hacer este pedido.\n\n" +
-        "Nombre: " + order.name + "\n" +
-        (order.existing ? "Jugadora existente\nID Guerreras: " + order.guerrerasId : "Nueva integrante") +
-        "\n\n" + lines.join("\n");
+        "Nombre: " + order.name + "\n\n" + lines.join("\n");
       if (order.items.some(function (item) { return isUniform(item.id); })) {
         text += "\n\n" + KIT;
       }
@@ -495,18 +425,8 @@
       showProblems = true;
       paintName();
       renderCart(order.items);
-      if (order.existing && idStatus !== "valid") {
-        if (!pedidoId.value.trim()) {
-          idError.textContent = "Completa este campo.";
-          idError.classList.add("is-on");
-          pedidoId.classList.add("is-invalid");
-        } else if (idStatus !== "invalid") {
-          idError.textContent = "Confirma el ID Guerreras.";
-          idError.classList.add("is-on");
-        }
-      }
       if (orderProblems(order)) {
-        var focus = !order.name ? pedidoName : (order.existing && idStatus !== "valid" ? pedidoId : form.querySelector("[data-size].is-invalid"));
+        var focus = !order.name ? pedidoName : form.querySelector("[data-size].is-invalid");
         if (focus) focus.focus();
         return;
       }
@@ -545,14 +465,8 @@
       pedidoName.value = "";
       nota.value = "";
       sede.value = "";
-      pedidoId.value = "";
-      idStatus = "";
       showProblems = false;
-      memberSwitch.setAttribute("aria-checked", "false");
-      memberLabel.textContent = "Nueva integrante";
-      existingPlayer.hidden = true;
       paintName();
-      paintId();
       paintNota();
       paintOrderSede();
       save([]);
