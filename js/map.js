@@ -4,31 +4,40 @@
 
   var places = [
     {
-      id: "norte",
-      zone: "Norte",
-      name: "Cancha El Monumental",
-      lines: ["Av 3F Norte # 52", "Dentro del Éxito de La Flora"],
-      lat: 3.487688,
-      lng: -76.518288,
-      maps: "https://www.google.com/maps/search/?api=1&query=Cancha+El+Monumental+Av+3F+Norte+52+Exito+La+Flora+Cali"
+      id: "sur-1",
+      zone: "Guerreras Sur 1",
+      name: "Cancha 5.11",
+      lines: ["Cra 56 #12a-01", "Cali, Valle del Cauca"],
+      lat: 3.405995,
+      lng: -76.53663,
+      maps: "https://www.google.com/maps/search/?api=1&query=Cancha+5.11+Cra+56+12a-01+Cali"
     },
     {
-      id: "sur-1",
-      zone: "Sur 1",
+      id: "sur-2",
+      zone: "Guerreras Sur 2",
       name: "Cancha Tiro de Esquina",
-      lines: ["Cra 70 # 13-90", "Al lado de Simon Parrilla"],
+      lines: ["Cra 70 #13-90", "Cali, Valle del Cauca"],
       lat: 3.3929357,
       lng: -76.5377499,
       maps: "https://www.google.com/maps/search/?api=1&query=Cancha+Tiro+de+Esquina+Cra+70+13-90+Cali"
     },
     {
-      id: "sur-2",
-      zone: "Sur 2",
-      name: "Cancha 5.11",
-      lines: ["Cra 56 # 12a-01", "Entre la autopista y Paso Ancho"],
-      lat: 3.405995,
-      lng: -76.53663,
-      maps: "https://www.google.com/maps/search/?api=1&query=Cancha+5.11+Cra+56+12a-01+Cali"
+      id: "norte",
+      zone: "Guerreras Norte",
+      name: "Cancha Wembley",
+      lines: ["Calle 58 Norte con Avenida 3 Norte", "Cali, Valle del Cauca"],
+      lat: 3.490045,
+      lng: -76.521075,
+      maps: "https://www.google.com/maps/search/?api=1&query=Cancha+Wembley+Calle+58+Norte+Avenida+3+Norte+Cali"
+    },
+    {
+      id: "campo",
+      zone: "Guerreras Ciudad del Campo",
+      name: "Cancha Campo Verde",
+      lines: ["Cra 7U #93-171", "Juanchito, Valle del Cauca"],
+      lat: 3.452348,
+      lng: -76.472938,
+      maps: "https://www.google.com/maps/search/?api=1&query=Cancha+Campo+Verde+Carrera+7U+93-171+Juanchito"
     }
   ];
 
@@ -184,16 +193,17 @@
     start();
   }
 
-  if (["norte", "sur-1", "sur-2"].indexOf(location.hash.replace("#", "")) !== -1) start();
+  var sedeIds = ["norte", "sur-1", "sur-2", "campo"];
+  if (sedeIds.indexOf(location.hash.replace("#", "")) !== -1) start();
 
   function openFromHash() {
     var id = location.hash.replace("#", "");
-    if (!markers[id] && ["norte", "sur-1", "sur-2"].indexOf(id) === -1) return;
+    if (!markers[id] && sedeIds.indexOf(id) === -1) return;
     start().then(function () { focusPlace(id); });
   }
 
   document.addEventListener("click", function (event) {
-    var link = event.target.closest("a[href='#norte'], a[href='#sur-1'], a[href='#sur-2']");
+    var link = event.target.closest("a[href='#norte'], a[href='#sur-1'], a[href='#sur-2'], a[href='#campo']");
     if (!link) return;
     openFromHash();
   });

@@ -4,16 +4,14 @@
 
   var sessions = {
     1: [
-      { time: "8:00 p.m.", name: "Tiro de Esquina · Sur 1", place: "Cra 70 # 13-90, al lado de Simon Parrilla", href: "#sur-1", short: "Sur 1" },
-      { time: "8:30 p.m.", name: "El Monumental · Norte", place: "Av 3F Norte # 52, dentro del Éxito de La Flora", href: "#norte", short: "Norte" }
+      { time: "8:00 p.m.", name: "Tiro de Esquina · Sur 2", place: "Cra 70 #13-90, Cali", href: "#sur-2", short: "Sur 2" }
     ],
     2: [
-      { time: "8:00 p.m.", name: "Cancha 5.11 · Sur 2", place: "Cra 56 # 12a-01, entre la autopista y Paso Ancho", href: "#sur-2", short: "Sur 2" }
+      { time: "8:00 p.m.", name: "Cancha 5.11 · Sur 1", place: "Cra 56 #12a-01, Cali", href: "#sur-1", short: "Sur 1" }
     ],
     6: [
-      { time: "4:00 p.m.", name: "El Monumental · Norte", place: "Av 3F Norte # 52, dentro del Éxito de La Flora", href: "#norte", short: "Norte" },
-      { time: "4:00 p.m.", name: "Tiro de Esquina · Sur 1", place: "Cra 70 # 13-90, al lado de Simon Parrilla", href: "#sur-1", short: "Sur 1" },
-      { time: "4:00 p.m.", name: "Cancha 5.11 · Sur 2", place: "Cra 56 # 12a-01, entre la autopista y Paso Ancho", href: "#sur-2", short: "Sur 2" }
+      { time: "4:00 p.m.", name: "Cancha 5.11 · Sur 1", place: "Cra 56 #12a-01, Cali", href: "#sur-1", short: "Sur 1" },
+      { time: "4:00 p.m.", name: "Tiro de Esquina · Sur 2", place: "Cra 70 #13-90, Cali", href: "#sur-2", short: "Sur 2" }
     ]
   };
 
