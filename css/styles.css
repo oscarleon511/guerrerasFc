@@ -733,6 +733,17 @@ h2 { margin: 0.2rem 0 0.6rem; font-size: clamp(1.75rem, 2.5vw, 2rem); color: var
   border-bottom: 1px solid var(--line);
 }
 
+.logo-wall button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+
 .logo-wall img {
   width: auto;
   height: auto;
