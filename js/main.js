@@ -70,8 +70,11 @@
 
   function renderBadge(items) {
     var count = items.reduce(function (sum, item) { return sum + item.qty; }, 0);
-    document.querySelectorAll("[data-cart-count]").forEach(function (node) {
-      node.textContent = count ? "(" + count + ")" : "";
+    document.querySelectorAll("[data-nav-cart]").forEach(function (link) {
+      link.hidden = count === 0;
+      var badge = link.querySelector("[data-nav-count]");
+      if (badge) badge.textContent = count;
+      link.setAttribute("aria-label", "Ver tu pedido, " + count + (count === 1 ? " artículo" : " artículos"));
     });
     document.querySelectorAll("[data-product-count]").forEach(function (node) {
       var id = node.getAttribute("data-product-count");

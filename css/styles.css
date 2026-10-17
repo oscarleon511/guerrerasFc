@@ -225,6 +225,44 @@ a:hover { color: var(--ink); }
 
 .menu-panel a[aria-current="page"] { box-shadow: inset 3px 0 0 var(--teal); padding-left: 0.7rem; }
 
+.nav-shop {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.nav-cart {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  color: var(--teal-ink);
+  text-decoration: none;
+}
+
+.nav-cart[hidden] { display: none; }
+
+.nav-cart span {
+  position: absolute;
+  top: -0.35rem;
+  right: -0.4rem;
+  min-width: 1.05rem;
+  height: 1.05rem;
+  padding: 0 0.2rem;
+  border-radius: 999px;
+  background: var(--teal-ink);
+  color: var(--white);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.05rem;
+  text-align: center;
+}
+
+.menu-panel .nav-shop { gap: 0.7rem; }
+
+.menu-panel .nav-cart { width: 2.2rem; height: 2.2rem; }
+
 .hero {
   position: relative;
   display: flex;
