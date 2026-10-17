@@ -1,11 +1,21 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es-CO">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Guerreras FC Cali — Sé parte de la familia</title>
-  <meta name="description" content="Guerreras FC es el equipo de fútbol femenino amateur más grande de Colombia. Cuatro sedes en el Valle del Cauca, desde 2015. Mujeres mayores de 18 años.">
+  <title>Fútbol femenino en Cali | Guerreras FC</title>
+  <meta name="description" content="Equipo de fútbol femenino amateur en Cali. Mujeres mayores de 18 años, desde 2015. Cuatro sedes en el Valle del Cauca, incluida Juanchito.">
   <meta name="theme-color" content="#39b0c4">
+  <meta property="og:type" content="website">
+  <meta property="og:locale" content="es_CO">
+  <meta property="og:site_name" content="Guerreras FC Cali">
+  <meta property="og:title" content="Fútbol femenino en Cali | Guerreras FC">
+  <meta property="og:description" content="Equipo de fútbol femenino amateur en Cali. Mujeres mayores de 18 años, desde 2015. Cuatro sedes en el Valle del Cauca.">
+  <meta property="og:image" content="assets/plantel.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Fútbol femenino en Cali | Guerreras FC">
+  <meta name="twitter:description" content="Equipo de fútbol femenino amateur en Cali. Mujeres mayores de 18 años, desde 2015. Cuatro sedes en el Valle del Cauca.">
+  <meta name="twitter:image" content="assets/plantel.jpg">
   <link rel="icon" href="assets/favicon.svg?v=3" type="image/svg+xml">
   <link rel="icon" href="assets/favicon-32.png?v=3" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=3">
@@ -16,16 +26,37 @@
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
-    "@type": "SportsOrganization",
-    "name": "Guerreras FC",
-    "sport": "Soccer",
-    "foundingDate": "2015",
-    "telephone": "+57-314-677-7099",
-    "address": {
-      "@type": "PostalAddress",
-      "addressLocality": "Cali",
-      "addressCountry": "CO"
-    }
+    "@graph": [
+      {
+        "@type": "SportsTeam",
+        "name": "Guerreras FC",
+        "alternateName": ["Guerreras FC Cali", "Guerreras Fútbol Club Cali"],
+        "sport": "Fútbol femenino",
+        "description": "Equipo de fútbol femenino amateur en Cali y el Valle del Cauca. Mujeres mayores de 18 años. Fundado en 2015.",
+        "foundingDate": "2015",
+        "telephone": "+573146777099",
+        "gender": "Female",
+        "areaServed": ["Cali", "Juanchito", "Valle del Cauca"],
+        "address": {
+          "@type": "PostalAddress",
+          "addressLocality": "Cali",
+          "addressRegion": "Valle del Cauca",
+          "addressCountry": "CO"
+        },
+        "sameAs": [
+          "https://www.instagram.com/guerreras_fc/",
+          "https://www.tiktok.com/@guerrerasfccali",
+          "https://www.facebook.com/guerrerasfc.cali",
+          "https://www.youtube.com/@guerrerasfc5474"
+        ]
+      },
+      {
+        "@type": "WebSite",
+        "name": "Guerreras FC Cali",
+        "inLanguage": "es-CO",
+        "description": "Fútbol femenino amateur en Cali para mujeres mayores de 18 años."
+      }
+    ]
   }
   </script>
 </head>
@@ -73,11 +104,12 @@
 
   <main id="contenido">
     <section class="hero">
-      <img class="hero-photo" src="assets/plantel.jpg" width="1600" height="848" alt="Plantel de Guerreras FC formado en la cancha, con uniformes negros, rosa, azul y verde." fetchpriority="high" decoding="async">
+      <img class="hero-photo" src="assets/plantel.jpg" width="1600" height="848" alt="Plantel de Guerreras FC en Cali, formado en la cancha con uniformes negros, rosa, azul y verde." fetchpriority="high" decoding="async">
       <div class="hero-shade" aria-hidden="true"></div>
       <div class="hero-copy">
         <h1>
-          <img class="hero-logo" src="assets/logo.png" width="512" height="512" alt="Guerreras FC">
+          <img class="hero-logo" src="assets/logo.png" width="512" height="512" alt="">
+          <span>Guerreras FC, fútbol femenino en Cali</span>
         </h1>
         <div class="actions">
           <button class="btn" type="button" data-join>Quiero ser Guerrera</button>
@@ -91,7 +123,7 @@
         <article class="portrait-split">
           <div class="portrait-copy">
             <h2>Bienvenida a Guerreras FC</h2>
-            <p>¡Bienvenida a Guerreras FC, donde la pasión se encuentra con el juego! Nuestro equipo de fútbol femenino amateur, con ubicaciones en cuatro lugares del Valle del Cauca desde el 2015, invita a mujeres dinámicas de 18 años en adelante a unirse a nuestra familia del fútbol.</p>
+            <p>¡Bienvenida a Guerreras FC, donde la pasión se encuentra con el juego! Nuestro equipo de fútbol femenino amateur en Cali, con cuatro sedes en el Valle del Cauca desde 2015, invita a mujeres de 18 años en adelante a unirse a nuestra familia del fútbol.</p>
           </div>
           <figure>
             <img src="assets/jugadora-teal.jpg" width="271" height="541" alt="Jugadora de Guerreras FC con uniforme turquesa, el balón bajo el pie." loading="lazy" decoding="async">
