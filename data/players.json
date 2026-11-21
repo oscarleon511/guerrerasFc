@@ -1,0 +1,79 @@
+[
+  {
+    "id": "reina",
+    "name": "Reina",
+    "number": 1,
+    "position": "POR",
+    "card": "assets/plantilla/portera-1.jpg",
+    "cardWidth": 233,
+    "cardHeight": 639,
+    "portrait": "assets/plantilla/reina.png",
+    "visible": true
+  },
+  {
+    "id": "rincon",
+    "name": "Rincón",
+    "number": 7,
+    "position": "DEF",
+    "card": "assets/plantilla/defensa-7.jpg",
+    "cardWidth": 251,
+    "cardHeight": 525,
+    "portrait": "assets/plantilla/rincon.png",
+    "visible": true
+  },
+  {
+    "id": "aguirre",
+    "name": "Aguirre",
+    "number": 21,
+    "position": "DEF",
+    "card": "assets/plantilla/defensa-21.jpg",
+    "cardWidth": 297,
+    "cardHeight": 591,
+    "portrait": "assets/plantilla/aguirre.png",
+    "visible": true
+  },
+  {
+    "id": "gonzalez",
+    "name": "González",
+    "number": 10,
+    "position": "CEN",
+    "card": "assets/plantilla/centro-10.jpg",
+    "cardWidth": 305,
+    "cardHeight": 545,
+    "portrait": "assets/plantilla/gonzalez.png",
+    "visible": true
+  },
+  {
+    "id": "alvarez",
+    "name": "Álvarez",
+    "number": 13,
+    "position": "CEN",
+    "card": "assets/plantilla/centro-13.jpg",
+    "cardWidth": 283,
+    "cardHeight": 535,
+    "portrait": "assets/plantilla/alvarez.png",
+    "visible": true
+  },
+  {
+    "id": "medina",
+    "name": "Medina",
+    "number": 6,
+    "position": "DEL",
+    "card": "assets/plantilla/delantera-6.jpg",
+    "cardWidth": 279,
+    "cardHeight": 587,
+    "portrait": "assets/plantilla/medina.png",
+    "visible": true
+  },
+  {
+    "id": "alzate",
+    "name": "Alzate",
+    "number": 21,
+    "position": "DEL",
+    "card": "assets/plantilla/delantera-21.jpg",
+    "cardWidth": 239,
+    "cardHeight": 555,
+    "portrait": "assets/plantilla/alzate.png",
+    "visible": true
+  }
+]

@@ -2,3 +2,6 @@
 Thumbs.db
 node_modules/
 *.log
+data/admin-auth.json
+data/telemetry.json
+data/*.tmp

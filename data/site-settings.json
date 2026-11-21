@@ -1,0 +1,25 @@
+{
+  "pages": {
+    "inicio": {
+      "visible": true
+    },
+    "sedes": {
+      "visible": true
+    },
+    "plantilla": {
+      "visible": true
+    },
+    "nosotras": {
+      "visible": true
+    },
+    "patrocinadores": {
+      "visible": true
+    },
+    "beneficios": {
+      "visible": true
+    },
+    "tienda": {
+      "visible": true
+    }
+  }
+}

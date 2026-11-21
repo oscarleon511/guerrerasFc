@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es-CO">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Administración | Guerreras FC</title>
+  <meta name="theme-color" content="#39b0c4">
+  <link rel="icon" href="assets/favicon.svg?v=3" type="image/svg+xml">
+  <link rel="icon" href="assets/favicon-32.png?v=3" sizes="32x32" type="image/png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/admin.css?v=8">
+</head>
+<body class="admin-body">
+  <main id="login" class="login-screen">
+    <div class="login-card">
+      <img src="assets/logo.png" width="512" height="512" alt="Guerreras FC">
+      <h1>Administración</h1>
+      <p>Entra para gestionar el sitio de Guerreras FC.</p>
+      <form id="login-form" method="post" action="/GFCCaliAdmin">
+        <p id="login-error" class="form-error" role="alert" hidden></p>
+        <label class="field" for="username">Usuario
+          <input id="username" name="username" type="text" autocomplete="username" required maxlength="64" spellcheck="false">
+        </label>
+        <label class="field" for="password">Contraseña
+          <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="128">
+        </label>
+        <button class="btn" type="submit">Entrar</button>
+      </form>
+      <button class="btn btn-ghost" type="button" id="dev-login" hidden>Entrar en modo desarrollo</button>
+    </div>
+  </main>
+
+  <div id="app" class="admin-shell" hidden>
+    <aside class="admin-side">
+      <a class="admin-brand" href="index.html">
+        <img src="assets/logo.png" width="512" height="512" alt="">
+        <span>Guerreras FC</span>
+      </a>
+      <p class="admin-kicker">Sitio</p>
+      <nav id="site-tabs" class="admin-nav" aria-label="Páginas del sitio"></nav>
+      <p class="admin-kicker">Club</p>
+      <nav id="club-tabs" class="admin-nav" aria-label="Gestión del club"></nav>
+    </aside>
+    <section class="admin-main">
+      <header class="admin-top">
+        <h1 id="panel-title" tabindex="-1">Inicio</h1>
+        <div class="admin-actions">
+          <a class="btn btn-ghost" href="index.html" target="_blank" rel="noopener noreferrer">Ver el sitio</a>
+          <button class="btn btn-ghost" type="button" id="open-password">Contraseña</button>
+          <button class="btn" type="button" id="logout">Salir</button>
+        </div>
+      </header>
+      <p id="save-status" class="save-status" role="status"></p>
+      <div id="panel"></div>
+    </section>
+  </div>
+
+  <footer class="admin-footer">
+    <p>Todos los derechos reservados a Guerreras FC · Cali, Colombia - 2026</p>
+    <p>Desarrollado por <a href="https://www.ovptek.com/" target="_blank" rel="noopener noreferrer">OvpTek</a></p>
+  </footer>
+
+  <dialog id="delete-player-dialog" class="password-dialog" aria-labelledby="delete-player-title">
+    <h2 id="delete-player-title">Eliminar jugadora</h2>
+    <p id="delete-player-copy"></p>
+    <p>Esta acción borra a la jugadora de forma permanente. No se podrá recuperar.</p>
+    <div class="admin-actions">
+      <button class="btn btn-danger" type="button" id="confirm-delete-player">Eliminar</button>
+      <button class="btn btn-ghost" type="button" id="cancel-delete-player">Cancelar</button>
+    </div>
+  </dialog>
+
+  <dialog id="password-dialog" class="password-dialog" aria-labelledby="password-title">
+    <form id="password-form" method="post" action="/GFCCaliAdmin">
+      <h2 id="password-title">Cambiar contraseña</h2>
+      <p id="password-error" class="form-error" role="alert" hidden></p>
+      <label class="field" for="current-password">Contraseña actual
+        <input id="current-password" type="password" autocomplete="current-password" required maxlength="128">
+      </label>
+      <label class="field" for="next-password">Nueva contraseña
+        <input id="next-password" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
+      </label>
+      <label class="field" for="confirm-password">Confirmar contraseña
+        <input id="confirm-password" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
+      </label>
+      <div class="admin-actions">
+        <button class="btn" type="submit">Guardar</button>
+        <button class="btn btn-ghost" type="button" id="close-password">Cancelar</button>
+      </div>
+    </form>
+  </dialog>
+  <script src="js/admin.js?v=7"></script>
+</body>
+</html>

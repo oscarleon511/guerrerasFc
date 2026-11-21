@@ -243,6 +243,8 @@ a:hover { color: var(--ink); }
 
 .nav-cart[hidden] { display: none; }
 
+[hidden] { display: none !important; }
+
 .nav-cart span {
   position: absolute;
   top: -0.35rem;
