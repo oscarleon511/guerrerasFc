@@ -6,3 +6,4 @@ data/admin-auth.json
 data/telemetry.json
 data/*.tmp
 data/player-photos/
+data/event-media/

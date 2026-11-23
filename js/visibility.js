@@ -5,6 +5,7 @@
     nosotras: "nosotras.html",
     patrocinadores: "patrocinadores.html",
     beneficios: "beneficios.html",
+    eventos: "eventos.html",
     tienda: "tienda.html"
   };
 

@@ -5,16 +5,18 @@ const fs = require("fs");
 const http = require("http");
 const path = require("path");
 const { rowsFromWorkbook, rosterWorkbook } = require("./lib/sheet");
+const { base32Encode, totpMatches } = require("./lib/totp");
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT) || 3000;
 const HOST = "127.0.0.1";
 const DATA = path.join(ROOT, "data");
-const AUTH_FILE = path.join(DATA, "admin-auth.json");
+const AUTH_FILE = process.env.GFC_AUTH_FILE || path.join(DATA, "admin-auth.json");
 const SETTINGS_FILE = path.join(DATA, "site-settings.json");
 const PLAYERS_FILE = path.join(DATA, "players.json");
 const ROSTER_FILE = path.join(DATA, "roster.json");
 const PHOTO_DIR = path.join(DATA, "player-photos");
+const EVENT_MEDIA = path.join(DATA, "event-media");
 const TEMPLATE_FILE = path.join(DATA, "roster-template.xlsx");
 const EVENTS_FILE = path.join(DATA, "events.json");
 const TELEMETRY_FILE = path.join(DATA, "telemetry.json");
@@ -23,7 +25,7 @@ const IDLE_MS = 30 * 60 * 1000;
 const LOCK_MS = 15 * 60 * 1000;
 const MAX_FAILS = 5;
 const SCRYPT = { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 };
-const PAGE_IDS = ["inicio", "sedes", "plantilla", "nosotras", "patrocinadores", "beneficios", "tienda"];
+const PAGE_IDS = ["inicio", "sedes", "plantilla", "nosotras", "patrocinadores", "beneficios", "tienda", "eventos"];
 const LABELS = {
   inicio: "Inicio",
   sedes: "Sedes",
@@ -31,7 +33,8 @@ const LABELS = {
   nosotras: "Nosotras",
   patrocinadores: "Patrocinadores",
   beneficios: "Beneficios",
-  tienda: "Tienda"
+  tienda: "Tienda",
+  eventos: "Eventos"
 };
 const PUBLIC_PAGES = {
   "/": "inicio",
@@ -47,7 +50,9 @@ const PUBLIC_PAGES = {
   "/beneficios": "beneficios",
   "/beneficios.html": "beneficios",
   "/tienda": "tienda",
-  "/tienda.html": "tienda"
+  "/tienda.html": "tienda",
+  "/eventos": "eventos",
+  "/eventos.html": "eventos"
 };
 const FILES = {
   "/": "index.html",
@@ -57,6 +62,7 @@ const FILES = {
   "/patrocinadores": "patrocinadores.html",
   "/beneficios": "beneficios.html",
   "/tienda": "tienda.html",
+  "/eventos": "eventos.html",
   "/GFCCaliAdmin": "GFCCaliAdmin.html"
 };
 const TYPES = {
@@ -77,10 +83,13 @@ const POSITIONS = ["POR", "DEF", "CEN", "DEL"];
 const ASSET = /^assets\/plantilla\/[a-z0-9-]+\.(jpg|jpeg|png|webp)$/i;
 const ID = /^[a-zA-Z0-9_-]{1,40}$/;
 const PHOTO_NAME = /^[a-f0-9]{16}\.(jpg|png|webp)$/;
+const VIDEO_NAME = /^[a-f0-9]{16}\.(mp4|webm)$/;
 const STATUSES = ["active", "suspended", "pending", "late"];
 
 const sessions = new Map();
 const loginAttempts = new Map();
+const loginTickets = new Map();
+const totpPending = new Map();
 let settingsCache = null;
 
 const DUMMY_SALT = crypto.randomBytes(16);
@@ -230,7 +239,7 @@ function baseHeaders(extra) {
   return Object.assign({
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
-    "Referrer-Policy": "no-referrer",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
     "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
     "Cache-Control": "no-store"
   }, extra || {});
@@ -257,6 +266,63 @@ function sendHtml(res, status, html, extra) {
 
 function unavailablePage() {
   return "<!DOCTYPE html><html lang=\"es-CO\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><meta name=\"robots\" content=\"noindex\"><title>Sección no disponible | Guerreras FC</title><link rel=\"stylesheet\" href=\"css/styles.css\"></head><body><main class=\"section\"><div class=\"wrap\"><p class=\"index\">Guerreras FC</p><h1>Esta sección no está disponible</h1><p>El club ocultó esta parte del sitio.</p><p><a class=\"btn\" href=\"index.html\">Volver al inicio</a></p></div></main></body></html>";
+}
+
+function readRaw(req, limit) {
+  const max = limit || 100000;
+  return new Promise(function (resolve, reject) {
+    const chunks = [];
+    let size = 0;
+    req.on("data", function (chunk) {
+      size += chunk.length;
+      if (size > max) {
+        const error = new Error("too large");
+        error.status = 413;
+        reject(error);
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", function () { resolve(Buffer.concat(chunks)); });
+    req.on("error", reject);
+  });
+}
+
+function sendMedia(req, res, full, type, cache) {
+  const stat = fs.statSync(full);
+  const headers = {
+    "Content-Type": type,
+    "Accept-Ranges": "bytes",
+    "Cache-Control": cache || "no-store",
+    "X-Robots-Tag": "noindex, nofollow"
+  };
+  const range = req.headers.range;
+  if (range && type.indexOf("video/") === 0) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(String(range));
+    if (!match || (match[1] === "" && match[2] === "")) {
+      res.writeHead(416, baseHeaders(Object.assign({ "Content-Range": "bytes */" + stat.size }, headers)));
+      res.end();
+      return;
+    }
+    const start = match[1] === "" ? Math.max(0, stat.size - Number(match[2])) : Number(match[1]);
+    const end = match[2] === "" || match[1] === "" ? stat.size - 1 : Number(match[2]);
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end >= stat.size || start > end) {
+      res.writeHead(416, baseHeaders(Object.assign({ "Content-Range": "bytes */" + stat.size }, headers)));
+      res.end();
+      return;
+    }
+    res.writeHead(206, baseHeaders(Object.assign({}, headers, {
+      "Content-Length": end - start + 1,
+      "Content-Range": "bytes " + start + "-" + end + "/" + stat.size
+    })));
+    if (req.method === "HEAD") return res.end();
+    fs.createReadStream(full, { start: start, end: end }).pipe(res);
+    return;
+  }
+  res.writeHead(200, baseHeaders(Object.assign({}, headers, { "Content-Length": stat.size })));
+  if (req.method === "HEAD") return res.end();
+  fs.createReadStream(full).pipe(res);
 }
 
 function readBody(req, limit) {
@@ -340,6 +406,16 @@ function cleanNotes(value) {
   return html.trim();
 }
 
+function eventNoteText(html) {
+  return String(html || "").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function cleanEventNote(value) {
+  const html = cleanNotes(value);
+  if (eventNoteText(html).length <= 10000) return html;
+  return cleanText(html.replace(/<[^>]+>/g, " "), 10000);
+}
+
 function cleanPhotos(value) {
   if (!Array.isArray(value)) return [];
   const names = [];
@@ -365,6 +441,16 @@ function imageKind(buffer) {
   return "";
 }
 
+function videoKind(buffer) {
+  if (buffer.length >= 12 && buffer.toString("ascii", 4, 8) === "ftyp") {
+    const brand = buffer.toString("ascii", 8, 12);
+    if (brand === "qt  ") return "";
+    return "mp4";
+  }
+  if (buffer.length >= 4 && buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) return "webm";
+  return "";
+}
+
 function removeDir(dir) {
   if (!fs.existsSync(dir)) return;
   fs.readdirSync(dir).forEach(function (entry) {
@@ -373,6 +459,59 @@ function removeDir(dir) {
     else fs.unlinkSync(full);
   });
   fs.rmdirSync(dir);
+}
+
+function eventMediaDir(id) {
+  if (!ID.test(id)) return null;
+  const dir = path.resolve(EVENT_MEDIA, id);
+  const relative = path.relative(EVENT_MEDIA, dir);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return dir;
+}
+
+function eventFilePath(id, file) {
+  const dir = eventMediaDir(id);
+  if (!dir || (!PHOTO_NAME.test(file) && !VIDEO_NAME.test(file))) return null;
+  const full = path.resolve(dir, file);
+  const relative = path.relative(dir, full);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return full;
+}
+
+function countEventFiles(dir, pattern) {
+  if (!fs.existsSync(dir)) return 0;
+  return fs.readdirSync(dir).filter(function (name) { return pattern.test(name); }).length;
+}
+
+function syncEventMedia(events) {
+  const keep = {};
+  events.forEach(function (item) {
+    keep[item.id] = {};
+    item.photos.forEach(function (name) { keep[item.id][name] = true; });
+    if (item.video) keep[item.id][item.video] = true;
+  });
+  if (!fs.existsSync(EVENT_MEDIA)) return;
+  fs.readdirSync(EVENT_MEDIA).forEach(function (entry) {
+    const dir = eventMediaDir(entry);
+    if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return;
+    if (!keep[entry]) {
+      removeDir(dir);
+      return;
+    }
+    fs.readdirSync(dir).forEach(function (file) {
+      if (!keep[entry][file]) fs.unlinkSync(path.join(dir, file));
+    });
+  });
+}
+
+function mediaType(file) {
+  const ext = path.extname(file).slice(1);
+  if (ext === "png") return "image/png";
+  if (ext === "webp") return "image/webp";
+  if (ext === "jpg") return "image/jpeg";
+  if (ext === "mp4") return "video/mp4";
+  if (ext === "webm") return "video/webm";
+  return "";
 }
 
 function syncRosterPhotos(players) {
@@ -523,6 +662,7 @@ function validRoster(list) {
       country: cleanText(item.country, 60),
       city: cleanText(item.city, 80),
       phone: cleanText(item.phone, 40),
+      documentId: cleanText(item.documentId, 40),
       sede: cleanText(item.sede, 60),
       category: cleanText(item.category, 20),
       extra: cleanText(item.extra, 80),
@@ -548,13 +688,31 @@ function validEvents(list) {
     const date = cleanText(item.date, 10);
     const time = cleanText(item.time, 5);
     const place = cleanText(item.place, 120);
-    const note = cleanText(item.note, 500);
+    const note = cleanEventNote(item.note);
+    let video = cleanText(item.video, 24);
     if (!ID.test(id) || ids.has(id) || name.length < 1 || !validDate(date)) return null;
     if (time && !/^\d{2}:\d{2}$/.test(time)) return null;
+    if (video && !VIDEO_NAME.test(video)) video = "";
     ids.add(id);
-    events.push({ id: id, name: name, date: date, time: time, place: place, note: note });
+    events.push({
+      id: id,
+      name: name,
+      date: date,
+      time: time,
+      place: place,
+      note: note,
+      published: item.published === true,
+      photos: cleanPhotos(item.photos),
+      video: video
+    });
   }
   return events;
+}
+
+function storedEvents() {
+  const raw = readJson(EVENTS_FILE, []);
+  if (!Array.isArray(raw)) return [];
+  return validEvents(raw) || raw;
 }
 
 function passwordOk(password) {
@@ -618,11 +776,30 @@ function publicPlayers() {
   });
 }
 
+function finishTotpLogin(req, res, ip, body) {
+  const ticket = String(body.ticket || "");
+  const pending = loginTickets.get(ticket);
+  if (!pending || pending.expires < Date.now() || !authRecord.totpEnabled || !authRecord.totpSecret) {
+    if (pending) loginTickets.delete(ticket);
+    markFailure(ip);
+    return sendJson(res, 401, { error: "El código no es válido. Vuelve a entrar." });
+  }
+  if (!totpMatches(authRecord.totpSecret, body.code)) {
+    markFailure(ip);
+    if (locked(ip)) loginTickets.delete(ticket);
+    return sendJson(res, 401, { error: "El código no es válido." });
+  }
+  loginTickets.delete(ticket);
+  loginAttempts.delete(ip);
+  return startSession(req, res);
+}
+
 async function login(req, res) {
   if (!sameOrigin(req)) return sendJson(res, 403, { error: "Solicitud rechazada." });
   const ip = clientIp(req);
   if (locked(ip)) return sendJson(res, 429, { error: "Demasiados intentos. Espera unos minutos." });
   const body = await readBody(req);
+  if (body.ticket) return finishTotpLogin(req, res, ip, body);
   const username = String(body.username || "");
   const password = String(body.password || "");
   if (username.length > 64 || password.length < 1 || password.length > 128) {
@@ -642,6 +819,15 @@ async function login(req, res) {
     return sendJson(res, 401, { error: "Usuario o contraseña incorrectos." });
   }
   loginAttempts.delete(ip);
+  if (authRecord.totpEnabled && authRecord.totpSecret) {
+    const now = Date.now();
+    loginTickets.forEach(function (value, key) {
+      if (value.expires < now) loginTickets.delete(key);
+    });
+    const ticket = crypto.randomBytes(32).toString("hex");
+    loginTickets.set(ticket, { expires: now + 5 * 60 * 1000 });
+    return sendJson(res, 200, { totpRequired: true, ticket: ticket });
+  }
   startSession(req, res);
 }
 
@@ -650,7 +836,11 @@ function startSession(req, res) {
   const csrf = crypto.randomBytes(32).toString("hex");
   const now = Date.now();
   sessions.set(id, { id: id, username: authRecord.username, csrf: csrf, created: now, seen: now });
-  sendJson(res, 200, { username: authRecord.username, csrf: csrf }, { "Set-Cookie": sessionCookie(id, req) });
+  sendJson(res, 200, {
+    username: authRecord.username,
+    csrf: csrf,
+    totpEnabled: Boolean(authRecord.totpEnabled)
+  }, { "Set-Cookie": sessionCookie(id, req) });
 }
 
 function devLogin(req, res) {
@@ -668,34 +858,140 @@ function logout(req, res) {
   sendJson(res, 200, { ok: true }, { "Set-Cookie": sessionCookie("", req, true) });
 }
 
-async function changePassword(req, res, session) {
-  const body = await readBody(req);
-  const current = String(body.current || "");
-  const next = String(body.next || "");
-  if (current.length < 1 || current.length > 128) return sendJson(res, 400, { error: "No se pudo cambiar la contraseña." });
-  if (!passwordOk(next)) return sendJson(res, 400, { error: "La nueva contraseña debe tener al menos 12 caracteres, con letras y números." });
+function persistAuth(record) {
+  const stored = {
+    username: record.username,
+    salt: record.salt,
+    hash: record.hash,
+    n: record.n,
+    r: record.r,
+    p: record.p
+  };
+  if (record.totpEnabled && record.totpSecret) {
+    stored.totpEnabled = true;
+    stored.totpSecret = record.totpSecret;
+  }
+  authRecord = stored;
+  writeJson(AUTH_FILE, stored);
+}
+
+async function passwordMatches(password) {
+  const current = String(password || "");
+  if (current.length < 1 || current.length > 128) return false;
   const salt = Buffer.from(authRecord.salt, "hex");
   const expected = Buffer.from(authRecord.hash, "hex");
   const actual = await scryptKey(current, salt, { n: authRecord.n, r: authRecord.r, p: authRecord.p });
-  const match = actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
-  if (!match) return sendJson(res, 401, { error: "La contraseña actual no coincide." });
+  return actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
+}
+
+async function changePassword(req, res, session) {
+  const body = await readBody(req);
+  const next = String(body.next || "");
+  if (!passwordOk(next)) return sendJson(res, 400, { error: "La nueva contraseña debe tener al menos 12 caracteres, con letras y números." });
+  if (!(await passwordMatches(body.current))) return sendJson(res, 401, { error: "La contraseña actual no coincide." });
+  if (authRecord.totpEnabled && !totpMatches(authRecord.totpSecret, body.code)) {
+    return sendJson(res, 401, { error: "El código no es válido." });
+  }
   const nextSalt = crypto.randomBytes(16);
   const nextHash = await scryptKey(next, nextSalt, SCRYPT);
-  authRecord = {
-    username: authRecord.username,
+  totpPending.delete(session.id);
+  persistAuth(Object.assign({}, authRecord, {
     salt: nextSalt.toString("hex"),
     hash: nextHash.toString("hex"),
     n: SCRYPT.N,
     r: SCRYPT.r,
     p: SCRYPT.p
-  };
-  writeJson(AUTH_FILE, authRecord);
+  }));
   sessions.clear();
   const id = crypto.randomBytes(32).toString("hex");
   const csrf = crypto.randomBytes(32).toString("hex");
   const now = Date.now();
   sessions.set(id, { id: id, username: authRecord.username, csrf: csrf, created: now, seen: now });
-  sendJson(res, 200, { ok: true, csrf: csrf }, { "Set-Cookie": sessionCookie(id, req) });
+  sendJson(res, 200, { ok: true, csrf: csrf, totpEnabled: Boolean(authRecord.totpEnabled) }, { "Set-Cookie": sessionCookie(id, req) });
+}
+
+async function startTotp(req, res, session) {
+  const ip = clientIp(req);
+  if (locked(ip)) return sendJson(res, 429, { error: "Demasiados intentos. Espera unos minutos." });
+  const body = await readBody(req);
+  if (!(await passwordMatches(body.password))) {
+    markFailure(ip);
+    return sendJson(res, 401, { error: "La contraseña actual no coincide." });
+  }
+  if (authRecord.totpEnabled) return sendJson(res, 400, { error: "La verificación en dos pasos ya está activa." });
+  const secret = crypto.randomBytes(20);
+  totpPending.set(session.id, { secret: secret.toString("hex"), expires: Date.now() + 10 * 60 * 1000 });
+  const encoded = base32Encode(secret);
+  const account = encodeURIComponent("Guerreras FC:" + authRecord.username);
+  const issuer = encodeURIComponent("Guerreras FC");
+  const otpauth = "otpauth://totp/" + account + "?secret=" + encoded + "&issuer=" + issuer + "&algorithm=SHA1&digits=6&period=30";
+  sendJson(res, 200, { secret: encoded, otpauth: otpauth });
+}
+
+async function confirmTotp(req, res, session) {
+  const ip = clientIp(req);
+  if (locked(ip)) return sendJson(res, 429, { error: "Demasiados intentos. Espera unos minutos." });
+  const body = await readBody(req);
+  const pending = totpPending.get(session.id);
+  if (!pending || pending.expires < Date.now()) {
+    totpPending.delete(session.id);
+    return sendJson(res, 400, { error: "La clave expiró. Empieza de nuevo." });
+  }
+  if (!totpMatches(pending.secret, body.code)) {
+    markFailure(ip);
+    if (locked(ip)) totpPending.delete(session.id);
+    return sendJson(res, 401, { error: "El código no es válido." });
+  }
+  persistAuth(Object.assign({}, authRecord, { totpEnabled: true, totpSecret: pending.secret }));
+  totpPending.delete(session.id);
+  sendJson(res, 200, { totpEnabled: true });
+}
+
+async function disableTotp(req, res, session) {
+  const ip = clientIp(req);
+  if (locked(ip)) return sendJson(res, 429, { error: "Demasiados intentos. Espera unos minutos." });
+  const body = await readBody(req);
+  if (!authRecord.totpEnabled || !authRecord.totpSecret) {
+    return sendJson(res, 400, { error: "La verificación en dos pasos no está activa." });
+  }
+  if (!(await passwordMatches(body.password))) {
+    markFailure(ip);
+    return sendJson(res, 401, { error: "La contraseña actual no coincide." });
+  }
+  if (!totpMatches(authRecord.totpSecret, body.code)) {
+    markFailure(ip);
+    return sendJson(res, 401, { error: "El código no es válido." });
+  }
+  persistAuth(Object.assign({}, authRecord, { totpEnabled: false, totpSecret: "" }));
+  totpPending.delete(session.id);
+  sendJson(res, 200, { totpEnabled: false });
+}
+
+async function cancelTotp(req, res, session) {
+  await readBody(req);
+  totpPending.delete(session.id);
+  sendJson(res, 200, { ok: true });
+}
+
+async function saveEventVideo(req, res) {
+  const query = new URL(req.url, "http://127.0.0.1").searchParams;
+  const id = cleanText(query.get("id"), 40);
+  const dir = eventMediaDir(id);
+  if (!dir) return sendJson(res, 400, { error: "El video no se pudo guardar." });
+  if (countEventFiles(dir, VIDEO_NAME) >= 2) return sendJson(res, 400, { error: "Guarda o cancela el evento antes de cambiar el video." });
+  let buffer;
+  try {
+    buffer = await readRaw(req, 30 * 1024 * 1024);
+  } catch (error) {
+    return sendJson(res, error.status || 400, { error: "El video debe pesar menos de 30 MB." });
+  }
+  if (!buffer.length) return sendJson(res, 400, { error: "El video no se pudo leer." });
+  const kind = videoKind(buffer);
+  if (!kind) return sendJson(res, 400, { error: "El video debe ser MP4 o WebM." });
+  const filename = crypto.randomBytes(8).toString("hex") + "." + kind;
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, filename), buffer);
+  return sendJson(res, 200, { file: filename });
 }
 
 async function handleApi(req, res, pathname) {
@@ -712,13 +1008,43 @@ async function handleApi(req, res, pathname) {
   if (req.method === "GET" && pathname === "/api/session") {
     const session = getSession(req);
     if (!session) return sendJson(res, 401, { error: "Debes iniciar sesión." });
-    return sendJson(res, 200, { username: session.username, csrf: session.csrf });
+    return sendJson(res, 200, { username: session.username, csrf: session.csrf, totpEnabled: Boolean(authRecord.totpEnabled) });
+  }
+
+  if (req.method === "GET" && pathname === "/api/events") {
+    const published = storedEvents().filter(function (item) { return item && item.published === true; }).map(function (item) {
+      return {
+        id: item.id,
+        name: item.name,
+        date: item.date,
+        time: item.time,
+        place: item.place,
+        note: item.note,
+        photos: item.photos || [],
+        video: item.video || ""
+      };
+    });
+    return sendJson(res, 200, { events: published });
+  }
+  if ((req.method === "GET" || req.method === "HEAD") && pathname === "/api/events/media") {
+    const query = new URL(req.url, "http://127.0.0.1").searchParams;
+    const id = cleanText(query.get("id"), 40);
+    const file = cleanText(query.get("file"), 24);
+    const item = storedEvents().filter(function (event) { return event && event.id === id && event.published === true; })[0];
+    const listed = item && ((item.photos || []).indexOf(file) !== -1 || item.video === file);
+    const full = listed ? eventFilePath(id, file) : null;
+    if (!full || !fs.existsSync(full) || !fs.statSync(full).isFile()) return sendJson(res, 404, { error: "No encontrada." });
+    return sendMedia(req, res, full, mediaType(file), "public, max-age=3600");
   }
 
   if (!pathname.startsWith("/api/admin")) return sendJson(res, 404, { error: "No encontrada." });
   const session = getSession(req);
   if (!session) return sendJson(res, 401, { error: "Debes iniciar sesión." });
   const writing = req.method === "PUT" || req.method === "POST";
+  if (writing && pathname === "/api/admin/events/video") {
+    if (!sameOrigin(req) || !csrfOk(req, session)) return sendJson(res, 403, { error: "Solicitud rechazada." });
+    return saveEventVideo(req, res);
+  }
   if (writing) {
     const type = String(req.headers["content-type"] || "");
     if (!type.includes("application/json")) return sendJson(res, 415, { error: "Solicitud rechazada." });
@@ -741,13 +1067,49 @@ async function handleApi(req, res, pathname) {
     writeJson(SETTINGS_FILE, settingsCache);
     return sendJson(res, 200, settingsCache);
   }
-  if (req.method === "GET" && pathname === "/api/admin/events") return sendJson(res, 200, { events: readJson(EVENTS_FILE, []) });
+  if (req.method === "GET" && pathname === "/api/admin/events") return sendJson(res, 200, { events: storedEvents() });
   if (req.method === "PUT" && pathname === "/api/admin/events") {
-    const body = await readBody(req);
+    const body = await readBody(req, 2000000);
     const events = validEvents(body.events);
     if (!events) return sendJson(res, 400, { error: "Revisa los datos del evento." });
     writeJson(EVENTS_FILE, events);
+    syncEventMedia(events);
     return sendJson(res, 200, { events: events });
+  }
+  if (req.method === "GET" && pathname === "/api/admin/events/media") {
+    const query = new URL(req.url, "http://127.0.0.1").searchParams;
+    const id = cleanText(query.get("id"), 40);
+    const file = cleanText(query.get("file"), 24);
+    const full = eventFilePath(id, file);
+    if (!full || !fs.existsSync(full) || !fs.statSync(full).isFile()) return sendJson(res, 404, { error: "No encontrada." });
+    return sendMedia(req, res, full, mediaType(file));
+  }
+  if (req.method === "POST" && pathname === "/api/admin/events/photo") {
+    const body = await readBody(req, 5000000);
+    const id = cleanText(body.id, 40);
+    const dir = eventMediaDir(id);
+    if (!dir) return sendJson(res, 400, { error: "La foto no se pudo guardar." });
+    if (countEventFiles(dir, PHOTO_NAME) >= 10) return sendJson(res, 400, { error: "Guarda o cancela el evento antes de agregar más fotos." });
+    const raw = String(body.data || "").replace(/\s/g, "");
+    const base64 = raw.indexOf(",") >= 0 ? raw.split(",").pop() : raw;
+    if (!/^[A-Za-z0-9+/=]+$/.test(base64)) return sendJson(res, 400, { error: "La foto no se pudo leer." });
+    const buffer = Buffer.from(base64, "base64");
+    if (buffer.length < 32 || buffer.length > 2500000) return sendJson(res, 400, { error: "La foto debe pesar menos de 2.5 MB." });
+    const kind = imageKind(buffer);
+    if (!kind) return sendJson(res, 400, { error: "La foto debe ser JPG, PNG o WebP." });
+    const filename = crypto.randomBytes(8).toString("hex") + "." + kind;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, filename), buffer);
+    return sendJson(res, 200, { file: filename });
+  }
+  if (req.method === "POST" && pathname === "/api/admin/events/media/remove") {
+    const body = await readBody(req);
+    const id = cleanText(body.id, 40);
+    const file = cleanText(body.file, 24);
+    const full = eventFilePath(id, file);
+    if (!full) return sendJson(res, 400, { error: "No se pudo quitar el archivo." });
+    if (fs.existsSync(full) && fs.statSync(full).isFile()) fs.unlinkSync(full);
+    return sendJson(res, 200, { ok: true });
   }
   if (req.method === "GET" && pathname === "/api/admin/roster/report") {
     const stored = readJson(ROSTER_FILE, []);
@@ -851,6 +1213,10 @@ async function handleApi(req, res, pathname) {
   }
   if (req.method === "GET" && pathname === "/api/admin/telemetry") return sendJson(res, 200, telemetryReport());
   if (req.method === "POST" && pathname === "/api/admin/password") return changePassword(req, res, session);
+  if (req.method === "POST" && pathname === "/api/admin/totp/start") return startTotp(req, res, session);
+  if (req.method === "POST" && pathname === "/api/admin/totp/confirm") return confirmTotp(req, res, session);
+  if (req.method === "POST" && pathname === "/api/admin/totp/disable") return disableTotp(req, res, session);
+  if (req.method === "POST" && pathname === "/api/admin/totp/cancel") return cancelTotp(req, res, session);
   sendJson(res, 404, { error: "No encontrada." });
 }
 

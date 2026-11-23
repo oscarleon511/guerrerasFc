@@ -19,6 +19,7 @@
   var weekdays = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
   var view = "week";
   var cursor = dateOnly(new Date());
+  var clubEvents = [];
   var title = root.querySelector("[data-cal-title]");
   var grid = root.querySelector("[data-cal-grid]");
   var prev = root.querySelector("[data-cal-prev]");
@@ -49,8 +50,61 @@
     return value.charAt(0).toUpperCase() + value.slice(1);
   }
 
+  function pad(number) {
+    return (number < 10 ? "0" : "") + number;
+  }
+
+  function iso(date) {
+    return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
+  }
+
+  function clock(value) {
+    var match = /^(\d{2}):(\d{2})$/.exec(String(value || ""));
+    if (!match) return String(value || "");
+    var hour = Number(match[1]);
+    var suffix = hour >= 12 ? "p. m." : "a. m.";
+    var shown = hour % 12 || 12;
+    return shown + ":" + match[2] + " " + suffix;
+  }
+
+  function plainName(value) {
+    return String(value || "").replace(/\*/g, "").replace(/\s+/g, " ").trim();
+  }
+
   function forDay(date) {
-    return sessions[date.getDay()] || [];
+    var list = (sessions[date.getDay()] || []).map(function (item) {
+      return {
+        kind: "training",
+        time: item.time,
+        name: item.name,
+        place: item.place,
+        href: item.href,
+        short: item.short
+      };
+    });
+    var key = iso(date);
+    clubEvents.forEach(function (item) {
+      if (item.date !== key) return;
+      var name = plainName(item.name);
+      list.push({
+        kind: "event",
+        id: item.id,
+        time: clock(item.time),
+        name: name,
+        place: String(item.place || "").trim(),
+        short: name.length > 28 ? name.slice(0, 27).trim() + "…" : name,
+        href: "eventos.html?evento=" + encodeURIComponent(item.id)
+      });
+    });
+    return list;
+  }
+
+  function activityLabel(events) {
+    var clubs = events.filter(function (item) { return item.kind === "event"; }).length;
+    var trainings = events.length - clubs;
+    if (clubs && trainings) return " actividades";
+    if (clubs) return clubs === 1 ? " evento" : " eventos";
+    return trainings === 1 ? " entrenamiento" : " entrenamientos";
   }
 
   function weekTitle(start) {
@@ -68,6 +122,7 @@
     var events = forDay(date);
     var node = document.createElement(events.length ? "button" : "div");
     node.className = "cal-day";
+    if (events.some(function (item) { return item.kind === "event"; })) node.classList.add("is-event");
     if (events.length === 1) node.classList.add("is-one");
     if (events.length > 1) node.classList.add("is-many");
     if (outside) node.classList.add("is-out");
@@ -90,7 +145,7 @@
       countN.textContent = String(events.length);
       var countLabel = document.createElement("span");
       countLabel.className = "cal-count-label";
-      countLabel.textContent = events.length === 1 ? " entrenamiento" : " entrenamientos";
+      countLabel.textContent = activityLabel(events);
       count.append(countN, countLabel);
 
       var marks = document.createElement("span");
@@ -110,7 +165,7 @@
 
       node.append(count, marks, preview);
       var label = cap(weekdays[date.getDay()]) + " " + date.getDate() + " de " + months[date.getMonth()] + ", " +
-        events.length + (events.length === 1 ? " entrenamiento" : " entrenamientos");
+        events.length + activityLabel(events);
       node.setAttribute("aria-label", label);
       node.addEventListener("click", function () { openDay(date, events); });
     }
@@ -149,8 +204,6 @@
     dialogTitle.textContent = cap(weekdays[date.getDay()]) + " " + date.getDate() + " de " + months[date.getMonth()];
     eventsBox.replaceChildren();
     events.forEach(function (event) {
-      var item = document.createElement("article");
-      item.className = "cal-event";
       var time = document.createElement("p");
       time.className = "cal-time";
       time.textContent = event.time;
@@ -158,11 +211,24 @@
       name.textContent = event.name;
       var place = document.createElement("p");
       place.textContent = event.place;
-      var link = document.createElement("a");
-      link.href = event.href;
-      link.textContent = "Ver sede";
-      link.addEventListener("click", function () { dialog.close(); });
-      item.append(time, name, place, link);
+      if (event.kind === "event") {
+        var link = document.createElement("a");
+        link.className = "cal-event";
+        link.href = event.href;
+        var more = document.createElement("span");
+        more.className = "cal-more";
+        more.textContent = "Ver evento";
+        link.append(time, name, place, more);
+        eventsBox.append(link);
+        return;
+      }
+      var item = document.createElement("article");
+      item.className = "cal-event";
+      var sede = document.createElement("a");
+      sede.href = event.href;
+      sede.textContent = "Ver sede";
+      sede.addEventListener("click", function () { dialog.close(); });
+      item.append(time, name, place, sede);
       eventsBox.append(item);
     });
     if (events.length > 1) {
@@ -208,4 +274,12 @@
   });
 
   render();
+
+  fetch("/api/events", { cache: "no-store" })
+    .then(function (response) { return response.ok ? response.json() : { events: [] }; })
+    .then(function (data) {
+      clubEvents = Array.isArray(data.events) ? data.events : [];
+      render();
+    })
+    .catch(function () {});
 })();

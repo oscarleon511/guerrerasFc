@@ -20,10 +20,14 @@
 *::before,
 *::after { box-sizing: border-box; }
 
-html { scroll-behavior: smooth; }
+html { scroll-behavior: smooth; background: var(--foam); }
 
 body {
   margin: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   color: var(--ink);
   background: var(--foam);
   font-family: var(--sans);
@@ -70,6 +74,8 @@ a:hover { color: var(--ink); }
   width: min(var(--max), calc(100% - 2.5rem));
   margin-inline: auto;
 }
+
+body > main { flex: 1 0 auto; }
 
 .site-header {
   position: sticky;
@@ -1099,6 +1105,14 @@ h2 { margin: 0.2rem 0 0.6rem; font-size: clamp(1.75rem, 2.5vw, 2rem); color: var
 
 .cal-swatch.is-many { background: var(--teal-ink); }
 
+.cal-swatch.is-event {
+  background: var(--white);
+  border: 1px solid var(--teal-ink);
+  box-shadow: inset 3px 0 0 var(--teal-ink);
+}
+
+.cal-day.is-event.is-one { box-shadow: inset 4px 0 0 var(--teal-ink); }
+
 .cal.is-week .cal-weekdays { display: none; }
 
 .cal-weekdays {
@@ -1302,7 +1316,17 @@ button.cal-day.is-many:hover { background: #0a4e5c; }
 
 .cal-event p { margin: 0.15rem 0 0; color: var(--slate); }
 
-.cal-event a { display: inline-block; margin-top: 0.35rem; font-weight: 600; }
+.cal-event a,
+.cal-more { display: inline-block; margin-top: 0.35rem; font-weight: 600; }
+
+a.cal-event {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+}
+
+a.cal-event:hover h4,
+a.cal-event:hover .cal-more { color: var(--teal-ink); }
 
 .cal-count-n {
   display: inline-grid;
@@ -2016,6 +2040,7 @@ form.join-card .join-actions { position: sticky; bottom: 0; }
 }
 
 .site-footer {
+  margin-top: auto;
   background: var(--ink);
   color: var(--white);
   padding: 3rem 0 1.5rem;
@@ -2162,6 +2187,125 @@ form.join-card .join-actions { position: sticky; bottom: 0; }
   }
   .hero .actions { flex-direction: column; align-items: center; }
 }
+
+.event-list { display: grid; gap: 1.25rem; }
+
+.event-card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+.event-card.is-target { outline: 3px solid var(--teal); outline-offset: 3px; }
+
+.event-card h2 { margin: 0 0 0.35rem; }
+
+.event-when, .event-place { margin: 0.15rem 0; color: var(--slate); font-weight: 600; }
+
+.event-note { margin: 0.8rem 0 0; }
+
+.event-note p { margin: 0.35rem 0; }
+
+.event-note ul,
+.event-note ol { margin: 0.35rem 0; padding-left: 1.2rem; }
+
+.event-photo, .event-slides {
+  width: 100%;
+  margin-top: 0.9rem;
+  border-radius: 0.8rem;
+  background: var(--ice);
+}
+
+.event-photo {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 36rem;
+  margin-inline: auto;
+  object-fit: contain;
+}
+
+.event-carousel { position: relative; margin-top: 0.9rem; }
+
+.event-slides {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  margin-top: 0;
+}
+
+.event-slides img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  opacity: 0;
+}
+
+.event-slides img.is-on { opacity: 1; }
+
+.event-nav {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 0;
+  border-radius: 50%;
+  background: var(--white);
+  color: var(--teal-ink);
+  font: inherit;
+  font-size: 1.6rem;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+
+.event-prev { left: 0.6rem; }
+
+.event-next { right: 0.6rem; }
+
+.event-dots {
+  display: flex;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.65rem;
+}
+
+.event-dots button {
+  width: 0.7rem;
+  height: 0.7rem;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--mist);
+  cursor: pointer;
+}
+
+.event-dots button.is-on { background: var(--teal-ink); }
+
+.event-video {
+  display: block;
+  width: 100%;
+  max-height: 28rem;
+  margin-top: 0.9rem;
+  border-radius: 0.8rem;
+  background: #000;
+}
+
+.event-share {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.event-share-status { margin: 0; min-height: 1.2rem; color: var(--teal-ink); font-weight: 700; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }

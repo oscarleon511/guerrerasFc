@@ -5,6 +5,11 @@
   var events = [];
   var players = [];
   var editingEvent = "";
+  var eventUploads = null;
+  var eventUploadBusy = false;
+  var eventPreviewIndex = 0;
+  var previewingSaved = "";
+  var eventNoteLimit = 10000;
   var editingPlayer = "";
   var rosterOpen = false;
   var playerDraft = null;
@@ -16,6 +21,9 @@
   var dragColumn = "";
   var infoDraft = null;
 
+  var totpEnabled = false;
+  var totpSetup = null;
+  var loginTicket = "";
   var menuOpen = true;
   try { menuOpen = sessionStorage.getItem("gfc-admin-menu") !== "closed"; } catch (error) { menuOpen = true; }
 
@@ -67,6 +75,7 @@
     ["country", "Pais de Nacimiento"],
     ["city", "Lugar de Nacimiento"],
     ["phone", "Teléfono de Contacto"],
+    ["documentId", "Documento"],
     ["sede", "Sede de Entrenamiento"],
     ["category", "Categoria"],
     ["extra", "Categorias Adicionales"],
@@ -207,7 +216,9 @@
   function paintNavs() {
     paintNav(document.getElementById("site-tabs"), siteTabs);
     paintNav(document.getElementById("club-tabs"), clubTabs);
-    title.textContent = tabMeta(tab).label;
+    var settingsButton = document.getElementById("open-settings");
+    if (settingsButton) settingsButton.setAttribute("aria-current", tab === "ajustes" ? "page" : "false");
+    title.textContent = tab === "ajustes" ? "Ajustes" : tabMeta(tab).label;
   }
 
   function sitePanel(item) {
@@ -233,17 +244,561 @@
     return "<article class=\"panel-card\"><p>Visitas a las páginas públicas. No se guarda la dirección de quien entra.</p><div class=\"stat-row\"><article><strong>" + report.total + "</strong><span>Visitas guardadas</span></article><article><strong>" + report.today + "</strong><span>Hoy</span></article></div><div class=\"meter\">" + bars + "</div><ul class=\"visit-list\">" + recent + "</ul></article>";
   }
 
+  function eventById(id) {
+    return events.filter(function (item) { return item.id === id; })[0] || null;
+  }
+
+  function eventDraft() {
+    if (editingEvent) {
+      if (!eventUploads || eventUploads.id !== editingEvent) {
+        var current = eventById(editingEvent) || {};
+        eventUploads = {
+          id: editingEvent,
+          photos: (current.photos || []).slice(),
+          video: current.video || "",
+          published: current.published === true,
+          fresh: false
+        };
+      }
+      return eventUploads;
+    }
+    if (!eventUploads || !eventUploads.fresh) {
+      eventUploads = { id: "e-" + Date.now().toString(36), photos: [], video: "", published: false, fresh: true };
+    }
+    return eventUploads;
+  }
+
+  function eventMediaUrl(file, id) {
+    var eventId = id || (eventUploads && eventUploads.id) || "";
+    return "/api/admin/events/media?id=" + encodeURIComponent(eventId) + "&file=" + encodeURIComponent(file);
+  }
+
+  function activePreviewPhotos() {
+    if (previewingSaved) {
+      var saved = eventById(previewingSaved);
+      if (saved && saved.photos) return saved.photos;
+    }
+    return (eventUploads && eventUploads.photos) || [];
+  }
+
+  function eventPhotoFigures(draft) {
+    return draft.photos.map(function (file, index) {
+      return "<figure><button type=\"button\" class=\"photo-thumb\" data-adjust-draft-photo=\"" + index + "\" aria-label=\"Recortar foto " + (index + 1) + "\"><img src=\"" + escapeHtml(eventMediaUrl(file)) + "\" alt=\"Foto " + (index + 1) + " del evento\"></button><button type=\"button\" data-remove-event-photo=\"" + index + "\">Quitar</button></figure>";
+    }).join("");
+  }
+
+  function eventVideoBlock(draft) {
+    if (!draft.video) return "";
+    return "<video controls preload=\"metadata\" src=\"" + escapeHtml(eventMediaUrl(draft.video)) + "\"></video><button type=\"button\" data-remove-event-video>Quitar video</button>";
+  }
+
+  function paintEventMedia() {
+    var draft = eventUploads;
+    var list = document.getElementById("event-photo-list");
+    var drop = document.getElementById("event-photo-drop");
+    var lead = document.getElementById("event-photo-lead");
+    var add = document.getElementById("event-photo-add");
+    var preview = document.getElementById("event-video-preview");
+    var videoLead = document.getElementById("event-video-lead");
+    var videoAdd = document.getElementById("event-video-add");
+    if (!draft || !list) return;
+    var full = draft.photos.length >= 5;
+    list.innerHTML = eventPhotoFigures(draft);
+    if (drop) drop.classList.toggle("is-full", full);
+    if (lead) lead.textContent = full ? "Ya hay 5 fotos. Quita una para agregar otra." : "Suelta las fotos aquí o elige archivos.";
+    if (add) add.disabled = full;
+    if (preview) preview.innerHTML = eventVideoBlock(draft);
+    if (videoLead) videoLead.textContent = draft.video ? "Suelta otro video para reemplazarlo." : "Suelta el video aquí o elige un archivo.";
+    if (videoAdd) videoAdd.textContent = draft.video ? "Cambiar video" : "Elegir video";
+    paintEventPreview();
+  }
+
+  function eventMediaStatus(id, message) {
+    var node = document.getElementById(id);
+    if (node) node.textContent = message || "";
+    if (message) setStatus(message);
+  }
+
+  function savedEventFiles(id) {
+    var item = eventById(id);
+    return {
+      photos: item && item.photos ? item.photos.slice() : [],
+      video: item && item.video ? item.video : ""
+    };
+  }
+
+  function releaseEventFile(id, file) {
+    if (!file) return Promise.resolve();
+    var saved = savedEventFiles(id);
+    if (saved.photos.indexOf(file) !== -1 || saved.video === file) return Promise.resolve();
+    return api("/api/admin/events/media/remove", "POST", { id: id, file: file });
+  }
+
+  function eventUploadsNeedCleanup(draft) {
+    if (!draft) return false;
+    var saved = savedEventFiles(draft.id);
+    if (draft.video && draft.video !== saved.video) return true;
+    return draft.photos.some(function (name) { return saved.photos.indexOf(name) === -1; });
+  }
+
+  function discardEventDraft() {
+    var draft = eventUploads;
+    eventUploads = null;
+    editingEvent = "";
+    if (!eventUploadsNeedCleanup(draft)) return Promise.resolve();
+    return api("/api/admin/events", "PUT", { events: events }).then(function (result) {
+      if (result.ok && result.data && result.data.events) events = result.data.events;
+    });
+  }
+
+  function uploadEventPhoto(id, dataUrl) {
+    var data = dataUrl.indexOf(",") >= 0 ? dataUrl.split(",")[1] : dataUrl;
+    return api("/api/admin/events/photo", "POST", { id: id, data: data }).then(function (result) {
+      if (!result.ok) throw new Error((result.data && result.data.error) || "La foto no se pudo guardar.");
+      return result.data.file;
+    });
+  }
+
+  var eventPhotoRatios = {
+    site: { name: "Sitio", outW: 1600, outH: 1000, hint: "Horizontal 16:10, como la foto en la página Eventos." },
+    instagram: { name: "Instagram", outW: 1080, outH: 1080, hint: "Cuadrada, como una publicación de Instagram." },
+    portrait: { name: "Vertical", outW: 1080, outH: 1350, hint: "Vertical 4:5, como una publicación de Instagram." },
+    story: { name: "Historia", outW: 1080, outH: 1920, hint: "Historia 9:16, como Instagram o WhatsApp." },
+    facebook: { name: "Facebook", outW: 1200, outH: 630, hint: "Horizontal ancha, como una publicación de Facebook." }
+  };
+  var eventPhotoMasters = {};
+  var eventEditorImage = null;
+  var eventEditorFile = "";
+  var eventEditorEventId = "";
+  var eventEditorIndex = -1;
+  var eventEditorSource = "";
+  var eventEditorRatio = "site";
+  var eventEditorZoom = 1;
+  var eventEditorX = 0;
+  var eventEditorY = 0;
+  var eventEditorDrag = null;
+
+  function eventEditorFrame() {
+    var ratio = eventPhotoRatios[eventEditorRatio] || eventPhotoRatios.site;
+    var maxW = 320;
+    var maxH = 360;
+    var scale = Math.min(maxW / ratio.outW, maxH / ratio.outH);
+    return { w: Math.max(1, Math.round(ratio.outW * scale)), h: Math.max(1, Math.round(ratio.outH * scale)), outW: ratio.outW, outH: ratio.outH };
+  }
+
+  function paintEventPhotoRatio() {
+    document.querySelectorAll("[data-photo-ratio]").forEach(function (button) {
+      var on = button.getAttribute("data-photo-ratio") === eventEditorRatio;
+      button.classList.toggle("is-on", on);
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    var hint = document.getElementById("event-photo-ratio-hint");
+    var ratio = eventPhotoRatios[eventEditorRatio] || eventPhotoRatios.site;
+    if (hint) hint.textContent = ratio.hint;
+  }
+
+  function paintEventPhotoEditor() {
+    var canvas = document.getElementById("event-photo-canvas");
+    if (!canvas || !eventEditorImage) return;
+    var frame = eventEditorFrame();
+    var context = canvas.getContext("2d");
+    var pixel = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = frame.w * pixel;
+    canvas.height = frame.h * pixel;
+    canvas.style.width = frame.w + "px";
+    canvas.style.height = frame.h + "px";
+    context.setTransform(pixel, 0, 0, pixel, 0, 0);
+    var cover = Math.max(frame.w / eventEditorImage.width, frame.h / eventEditorImage.height);
+    var scale = cover * eventEditorZoom;
+    var width = eventEditorImage.width * scale;
+    var height = eventEditorImage.height * scale;
+    var minX = frame.w - width;
+    var minY = frame.h - height;
+    if (eventEditorX > 0) eventEditorX = 0;
+    if (eventEditorY > 0) eventEditorY = 0;
+    if (eventEditorX < minX) eventEditorX = minX;
+    if (eventEditorY < minY) eventEditorY = minY;
+    context.fillStyle = "#121212";
+    context.fillRect(0, 0, frame.w, frame.h);
+    context.drawImage(eventEditorImage, eventEditorX, eventEditorY, width, height);
+  }
+
+  function setEventEditorZoom(next) {
+    if (!eventEditorImage) return;
+    var frame = eventEditorFrame();
+    var zoom = Math.min(3, Math.max(1, next));
+    var cover = Math.max(frame.w / eventEditorImage.width, frame.h / eventEditorImage.height);
+    var oldScale = cover * eventEditorZoom;
+    var nextScale = cover * zoom;
+    var centerX = (frame.w / 2 - eventEditorX) / oldScale;
+    var centerY = (frame.h / 2 - eventEditorY) / oldScale;
+    eventEditorZoom = zoom;
+    eventEditorX = frame.w / 2 - centerX * nextScale;
+    eventEditorY = frame.h / 2 - centerY * nextScale;
+    var slider = document.getElementById("event-photo-zoom");
+    if (slider) slider.value = String(zoom);
+    paintEventPhotoEditor();
+  }
+
+  function resetEventEditorFrame() {
+    if (!eventEditorImage) return;
+    var frame = eventEditorFrame();
+    var cover = Math.max(frame.w / eventEditorImage.width, frame.h / eventEditorImage.height);
+    eventEditorZoom = 1;
+    eventEditorX = (frame.w - eventEditorImage.width * cover) / 2;
+    eventEditorY = (frame.h - eventEditorImage.height * cover) / 2;
+    var slider = document.getElementById("event-photo-zoom");
+    if (slider) slider.value = "1";
+    paintEventPhotoRatio();
+    paintEventPhotoEditor();
+  }
+
+  function eventCropData() {
+    var frame = eventEditorFrame();
+    var cover = Math.max(frame.w / eventEditorImage.width, frame.h / eventEditorImage.height);
+    var scale = cover * eventEditorZoom;
+    var canvas = document.createElement("canvas");
+    canvas.width = frame.outW;
+    canvas.height = frame.outH;
+    var context = canvas.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, frame.outW, frame.outH);
+    context.drawImage(eventEditorImage, Math.max(0, -eventEditorX / scale), Math.max(0, -eventEditorY / scale), frame.w / scale, frame.h / scale, 0, 0, frame.outW, frame.outH);
+    var quality = 0.86;
+    var data = canvas.toDataURL("image/jpeg", quality);
+    while (quality > 0.52 && data.length > 3000000) {
+      quality -= 0.08;
+      data = canvas.toDataURL("image/jpeg", quality);
+    }
+    return data;
+  }
+
+  function previewPhotoTarget() {
+    if (previewingSaved) {
+      var saved = eventById(previewingSaved);
+      if (saved) return { id: saved.id, photos: saved.photos || [], source: "preview" };
+    }
+    return { id: eventUploads && eventUploads.id, photos: (eventUploads && eventUploads.photos) || [], source: "draft" };
+  }
+
+  function showEventPhotoEditor(image, file) {
+    eventEditorImage = image;
+    eventEditorFile = file;
+    if (!eventPhotoMasters[file]) eventPhotoMasters[file] = image;
+    eventEditorRatio = "site";
+    var status = document.getElementById("event-photo-editor-status");
+    if (status) status.textContent = "";
+    var save = document.getElementById("apply-event-photo");
+    if (save) save.disabled = false;
+    resetEventEditorFrame();
+    var dialog = document.getElementById("event-photo-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+
+  function openEventPhotoEditor(eventId, index, source) {
+    var photos = source === "draft" && eventUploads && eventUploads.id === eventId ? eventUploads.photos : ((eventById(eventId) || {}).photos || []);
+    if (source === "preview") {
+      var target = previewPhotoTarget();
+      eventId = target.id;
+      photos = target.photos;
+      source = target.source;
+    }
+    var file = photos[index];
+    if (!eventId || !file) return;
+    if (eventUploads && eventUploads.id !== eventId && eventUploadsNeedCleanup(eventUploads)) {
+      eventMediaStatus("event-photo-status", "Guarda o cancela el evento que estás escribiendo antes de recortar esta foto.");
+      return;
+    }
+    eventEditorEventId = eventId;
+    eventEditorIndex = index;
+    eventEditorSource = source;
+    var master = eventPhotoMasters[file];
+    if (master) {
+      showEventPhotoEditor(master, file);
+      return;
+    }
+    var image = new Image();
+    image.onload = function () { showEventPhotoEditor(image, file); };
+    image.onerror = function () { eventMediaStatus("event-photo-status", "La foto no se pudo abrir."); };
+    image.src = eventMediaUrl(file, eventId);
+  }
+
+  function closeEventPhotoEditor() {
+    eventEditorImage = null;
+    eventEditorDrag = null;
+    eventEditorIndex = -1;
+    var dialog = document.getElementById("event-photo-dialog");
+    if (dialog && dialog.open) dialog.close();
+  }
+
+  function applyEventPhotoEdit() {
+    if (!eventEditorImage || eventEditorIndex < 0 || !eventEditorEventId) return;
+    var eventId = eventEditorEventId;
+    var index = eventEditorIndex;
+    var source = eventEditorSource;
+    var previous = eventEditorFile;
+    var save = document.getElementById("apply-event-photo");
+    var status = document.getElementById("event-photo-editor-status");
+    if (save) save.disabled = true;
+    if (status) status.textContent = "Guardando…";
+    uploadEventPhoto(eventId, eventCropData()).then(function (filename) {
+      if (eventPhotoMasters[previous]) eventPhotoMasters[filename] = eventPhotoMasters[previous];
+      var draft = eventUploads && eventUploads.id === eventId ? eventUploads : null;
+      var saved = eventById(eventId);
+      var previousPhotos = saved && saved.photos ? saved.photos.slice() : null;
+      var previousVideo = saved ? (saved.video || "") : "";
+      if (draft && draft.photos[index] !== undefined) draft.photos[index] = filename;
+      if (saved && saved.photos && saved.photos[index] !== undefined) {
+        if (draft) saved.photos = draft.photos.slice();
+        else saved.photos[index] = filename;
+        if (draft && draft.video) saved.video = draft.video;
+        return api("/api/admin/events", "PUT", { events: events }).then(function (result) {
+          if (!result.ok) {
+            if (draft && draft.photos[index] !== undefined) draft.photos[index] = previous;
+            if (previousPhotos) saved.photos = previousPhotos;
+            saved.video = previousVideo;
+            return releaseEventFile(eventId, filename).then(function () {
+              throw new Error((result.data && result.data.error) || "No se pudo guardar la foto.");
+            });
+          }
+          events = result.data.events;
+          var fresh = eventById(eventId);
+          if (draft && fresh) {
+            draft.photos = fresh.photos.slice();
+            draft.video = fresh.video || "";
+          }
+          return filename;
+        });
+      }
+      return releaseEventFile(eventId, previous).then(function () { return filename; });
+    }).then(function () {
+      closeEventPhotoEditor();
+      var media = document.getElementById("event-preview-media");
+      if (media) media.removeAttribute("data-media");
+      if (source === "draft") showFormPreview();
+      else paintEventPreview();
+      if (eventUploads && eventUploads.id === eventId) paintEventMedia();
+      eventMediaStatus("event-photo-status", "Foto recortada. La vista previa muestra cómo queda en la página.");
+    }).catch(function (error) {
+      if (save) save.disabled = false;
+      if (status) status.textContent = error.message || "No se pudo guardar la foto.";
+    });
+  }
+
+  function addEventPhotos(fileList) {
+    var draft = eventDraft();
+    if (eventUploadBusy) return;
+    var incoming = Array.prototype.slice.call(fileList || []);
+    var room = 5 - draft.photos.length;
+    if (!incoming.length || room <= 0) {
+      if (room <= 0) eventMediaStatus("event-photo-status", "Solo puedes tener 5 fotos.");
+      return;
+    }
+    var rejected = incoming.filter(function (file) { return !acceptedPhoto(file); });
+    var files = incoming.filter(acceptedPhoto);
+    if (!files.length) {
+      eventMediaStatus("event-photo-status", "La foto debe ser JPG, PNG o WebP.");
+      return;
+    }
+    if (files.length > room) {
+      eventMediaStatus("event-photo-status", "Solo puedes tener 5 fotos. Se agregaron las primeras " + room + ".");
+      files = files.slice(0, room);
+    } else if (rejected.length) eventMediaStatus("event-photo-status", "Algunas fotos no son JPG, PNG o WebP y no se agregaron.");
+    else eventMediaStatus("event-photo-status", "Subiendo fotos…");
+    var eventId = draft.id;
+    eventUploadBusy = true;
+    files.reduce(function (chain, file) {
+      return chain.then(function () { return readPhotoFile(file); }).then(function (data) {
+        if (!eventUploads || eventUploads.id !== eventId) return null;
+        return uploadEventPhoto(eventId, data).then(function (filename) {
+          if (!eventUploads || eventUploads.id !== eventId) return releaseEventFile(eventId, filename);
+          if (eventUploads.photos.indexOf(filename) === -1) eventUploads.photos.push(filename);
+          paintEventMedia();
+        });
+      });
+    }, Promise.resolve()).then(function () {
+      if (eventUploads && eventUploads.id === eventId && !rejected.length) {
+        eventMediaStatus("event-photo-status", "Fotos guardadas. Se publican al guardar el evento si el interruptor está encendido.");
+      }
+    }).catch(function (error) {
+      eventMediaStatus("event-photo-status", error.message || "La foto no se pudo leer.");
+    }).then(function () {
+      eventUploadBusy = false;
+    });
+  }
+
+  function acceptedVideo(file) {
+    var type = String(file.type || "").toLowerCase();
+    var name = String(file.name || "");
+    if (type === "video/mp4" || type === "video/webm") return true;
+    return /\.(mp4|webm)$/i.test(name) && (!type || type === "application/octet-stream");
+  }
+
+  function addEventVideo(file) {
+    var draft = eventDraft();
+    if (eventUploadBusy || !file) return;
+    var name = String(file.name || "");
+    if (/\.(mov|m4v)$/i.test(name) || String(file.type || "").toLowerCase() === "video/quicktime") {
+      eventMediaStatus("event-video-status", "El video debe ser MP4 o WebM.");
+      return;
+    }
+    if (!acceptedVideo(file)) {
+      eventMediaStatus("event-video-status", "El video debe ser MP4 o WebM.");
+      return;
+    }
+    if (file.size > 30 * 1024 * 1024) {
+      eventMediaStatus("event-video-status", "El video debe pesar menos de 30 MB.");
+      return;
+    }
+    var eventId = draft.id;
+    var previous = draft.video;
+    eventUploadBusy = true;
+    eventMediaStatus("event-video-status", "Subiendo video…");
+    fetch("/api/admin/events/video?id=" + encodeURIComponent(eventId), {
+      method: "POST",
+      credentials: "same-origin",
+      headers: {
+        "Content-Type": file.type || "application/octet-stream",
+        "X-CSRF-Token": csrf
+      },
+      body: file
+    }).then(function (response) {
+      return response.json().catch(function () { return {}; }).then(function (data) {
+        if (!response.ok) throw new Error(data.error || "El video no se pudo guardar.");
+        return data.file;
+      });
+    }).then(function (filename) {
+      if (!eventUploads || eventUploads.id !== eventId) return releaseEventFile(eventId, filename);
+      eventUploads.video = filename;
+      paintEventMedia();
+      eventMediaStatus("event-video-status", "Video guardado.");
+      if (previous && previous !== filename) return releaseEventFile(eventId, previous);
+    }).catch(function (error) {
+      eventMediaStatus("event-video-status", error.message || "El video no se pudo guardar.");
+    }).then(function () {
+      eventUploadBusy = false;
+    });
+  }
+
   function eventForm() {
-    var current = events.filter(function (item) { return item.id === editingEvent; })[0] || { name: "", date: "", time: "", place: "", note: "" };
-    return "<form id=\"event-form\" class=\"form-grid\"><label class=\"field wide\">Nombre<input name=\"name\" required maxlength=\"80\" value=\"" + escapeHtml(current.name) + "\"></label><label class=\"field\">Fecha<input name=\"date\" type=\"date\" required value=\"" + escapeHtml(current.date) + "\"></label><label class=\"field\">Hora<input name=\"time\" type=\"time\" value=\"" + escapeHtml(current.time) + "\"></label><label class=\"field wide\">Lugar<input name=\"place\" maxlength=\"120\" value=\"" + escapeHtml(current.place) + "\"></label><label class=\"field wide\">Nota<textarea name=\"note\" maxlength=\"500\" rows=\"3\">" + escapeHtml(current.note) + "</textarea></label><div class=\"wide admin-actions\"><button class=\"btn\" type=\"submit\">" + (editingEvent ? "Guardar evento" : "Agregar evento") + "</button>" + (editingEvent ? "<button class=\"btn btn-ghost\" type=\"button\" id=\"cancel-event\">Cancelar</button>" : "") + "</div></form>";
+    var draft = eventDraft();
+    var current = editingEvent ? (eventById(editingEvent) || {}) : {};
+    var full = draft.photos.length >= 5;
+    return [
+      "<form id=\"event-form\" class=\"form-grid\">",
+      "<label class=\"field wide\">Nombre<input name=\"name\" required maxlength=\"80\" value=\"" + escapeHtml(current.name || "") + "\"></label>",
+      "<label class=\"field\">Fecha<input name=\"date\" type=\"date\" required value=\"" + escapeHtml(current.date || "") + "\"></label>",
+      "<label class=\"field\">Hora<input name=\"time\" type=\"time\" value=\"" + escapeHtml(current.time || "") + "\"></label>",
+      "<label class=\"field wide\">Lugar<input name=\"place\" maxlength=\"120\" value=\"" + escapeHtml(current.place || "") + "\"></label>",
+      "<div class=\"wide notes-editor\"><span class=\"field-label\">Nota</span><div class=\"notes-tools\"><button type=\"button\" data-event-note-cmd=\"bold\">Negrita</button><button type=\"button\" data-event-note-cmd=\"italic\">Cursiva</button><button type=\"button\" data-event-note-cmd=\"underline\">Subrayado</button><button type=\"button\" data-event-note-cmd=\"insertUnorderedList\">Lista</button></div><div id=\"event-note-input\" class=\"notes-input\" contenteditable=\"true\" role=\"textbox\" aria-multiline=\"true\" aria-label=\"Nota\"></div><p id=\"event-note-count\" class=\"notes-count\" aria-live=\"polite\">0 / 10000</p></div>",
+      "<div class=\"wide\"><span class=\"field-label\">Fotos</span><div id=\"event-photo-drop\" class=\"photo-drop" + (full ? " is-full" : "") + "\"><p id=\"event-photo-lead\">" + (full ? "Ya hay 5 fotos. Quita una para agregar otra." : "Suelta las fotos aquí o elige archivos.") + "</p><p class=\"field-hint\">Hasta 5 fotos, en JPG, PNG o WebP. Haz clic en una foto para recortarla al formato del sitio o de una red social.</p><button class=\"btn btn-ghost\" type=\"button\" id=\"event-photo-add\"" + (full ? " disabled" : "") + ">Elegir fotos</button><input id=\"event-photo-file\" type=\"file\" accept=\"image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp\" multiple hidden></div><div id=\"event-photo-list\" class=\"photo-list\">" + eventPhotoFigures(draft) + "</div><p id=\"event-photo-status\" class=\"photo-status\" role=\"status\"></p></div>",
+      "<div class=\"wide\"><span class=\"field-label\">Video</span><div id=\"event-video-drop\" class=\"photo-drop\"><p id=\"event-video-lead\">" + (draft.video ? "Suelta otro video para reemplazarlo." : "Suelta el video aquí o elige un archivo.") + "</p><p class=\"field-hint\">Un solo video, en MP4 o WebM, de hasta 30 MB.</p><button class=\"btn btn-ghost\" type=\"button\" id=\"event-video-add\">" + (draft.video ? "Cambiar video" : "Elegir video") + "</button><input id=\"event-video-file\" type=\"file\" accept=\"video/mp4,video/webm,.mp4,.webm\" hidden></div><div id=\"event-video-preview\" class=\"event-video-preview\">" + eventVideoBlock(draft) + "</div><p id=\"event-video-status\" class=\"photo-status\" role=\"status\"></p></div>",
+      "<div class=\"wide admin-actions\"><button class=\"btn\" type=\"submit\">" + (editingEvent ? "Guardar evento" : "Agregar evento") + "</button>" + (editingEvent ? "<button class=\"btn btn-ghost\" type=\"button\" id=\"cancel-event\">Cancelar</button>" : "") + "</div>",
+      "</form>"
+    ].join("");
   }
 
   function eventsPanel() {
     var list = events.length ? events.map(function (item) {
       var when = item.date + (item.time ? " · " + item.time : "");
-      return "<article class=\"record\"><div><strong>" + escapeHtml(item.name) + "</strong><p>" + escapeHtml(when) + (item.place ? " · " + escapeHtml(item.place) : "") + "</p></div><div class=\"record-actions\"><button class=\"btn btn-ghost\" type=\"button\" data-edit-event=\"" + escapeHtml(item.id) + "\">Editar</button><button class=\"btn btn-ghost\" type=\"button\" data-delete-event=\"" + escapeHtml(item.id) + "\">Quitar</button></div></article>";
+      var flags = [];
+      if (item.published) flags.push("En el sitio");
+      var count = item.photos && item.photos.length ? item.photos.length : 0;
+      if (count) flags.push(count + (count === 1 ? " foto" : " fotos"));
+      if (item.video) flags.push("Video");
+      var flagHtml = flags.length ? "<p class=\"record-flags\">" + flags.map(function (flag) { return "<span class=\"record-flag\">" + escapeHtml(flag) + "</span>"; }).join("") + "</p>" : "";
+      return "<article class=\"record" + (previewingSaved === item.id ? " is-previewing" : "") + "\"><div><strong>" + escapeHtml(item.name) + "</strong><p>" + escapeHtml(when) + (item.place ? " · " + escapeHtml(item.place) : "") + "</p>" + flagHtml + "</div><div class=\"record-actions\"><label class=\"switch\"><input type=\"checkbox\" data-publish-event=\"" + escapeHtml(item.id) + "\"" + (item.published ? " checked" : "") + "><span class=\"switch-track\" aria-hidden=\"true\"></span><span>En el sitio</span></label><button class=\"btn btn-ghost\" type=\"button\" data-preview-event=\"" + escapeHtml(item.id) + "\">Vista previa</button><button class=\"btn btn-ghost\" type=\"button\" data-edit-event=\"" + escapeHtml(item.id) + "\">Editar</button><button class=\"btn btn-ghost\" type=\"button\" data-delete-event=\"" + escapeHtml(item.id) + "\">Quitar</button></div></article>";
     }).join("") : "<p>No hay eventos.</p>";
-    return "<article class=\"panel-card\"><p>Eventos internos del club. No se publican en el sitio.</p>" + eventForm() + "<div class=\"record-list\">" + list + "</div></article>";
+    var pageOn = settings && settings.pages && settings.pages.eventos && settings.pages.eventos.visible !== false;
+    var pageSwitch = "<article class=\"panel-card\"><p>Muestra u oculta la pestaña Eventos en el menú del sitio. Si está apagada, la página tampoco se abre.</p><label class=\"switch\"><input type=\"checkbox\" data-visible=\"eventos\"" + (pageOn ? " checked" : "") + "><span class=\"switch-track\" aria-hidden=\"true\"></span><span>Visible en el menú y en la página</span></label></article>";
+    return pageSwitch + "<article class=\"panel-card events-panel\"><p>Los eventos con el interruptor encendido se ven en la página Eventos del sitio. Desde ahí se pueden compartir.</p><div class=\"event-workspace\"><div class=\"event-form-column\">" + eventForm() + "</div><aside class=\"event-preview-column\"><p class=\"field-label\">Vista previa</p><article class=\"event-preview-card\"><p id=\"event-preview-state\" class=\"field-hint\" hidden></p><h2 id=\"event-preview-title\">Nombre del evento</h2><p id=\"event-preview-when\">Fecha y hora</p><p id=\"event-preview-place\" hidden></p><div id=\"event-preview-media\"></div><p class=\"event-preview-adjust\"><button type=\"button\" class=\"btn btn-ghost\" id=\"event-preview-adjust\" hidden>Ajustar foto</button></p><div id=\"event-preview-note\" class=\"event-preview-note\" hidden></div><p class=\"event-preview-share\"><button type=\"button\" class=\"btn\" disabled>Compartir</button></p></article></aside></div><div class=\"record-list\">" + list + "</div></article>";
+  }
+
+  function eventNoteValue() {
+    var input = document.getElementById("event-note-input");
+    if (!input) return "";
+    var html = sanitizeNotes(input.innerHTML);
+    return notesText(html) ? html : "";
+  }
+
+  function showFormPreview() {
+    previewingSaved = "";
+    document.querySelectorAll(".record.is-previewing").forEach(function (row) { row.classList.remove("is-previewing"); });
+    paintEventPreview();
+  }
+
+  function paintEventPreview() {
+    var title = document.getElementById("event-preview-title");
+    var when = document.getElementById("event-preview-when");
+    var placeNode = document.getElementById("event-preview-place");
+    var media = document.getElementById("event-preview-media");
+    var noteNode = document.getElementById("event-preview-note");
+    var state = document.getElementById("event-preview-state");
+    var form = document.getElementById("event-form");
+    if (!title || !form || !media) return;
+    var saved = previewingSaved ? eventById(previewingSaved) : null;
+    var name = saved ? String(saved.name || "").trim() : String((form.querySelector("[name=name]") || {}).value || "").trim();
+    var date = saved ? String(saved.date || "") : String((form.querySelector("[name=date]") || {}).value || "");
+    var time = saved ? String(saved.time || "") : String((form.querySelector("[name=time]") || {}).value || "");
+    var place = saved ? String(saved.place || "").trim() : String((form.querySelector("[name=place]") || {}).value || "").trim();
+    var note = saved ? sanitizeNotes(saved.note || "") : eventNoteValue();
+    var photos = saved ? (saved.photos || []) : ((eventUploads && eventUploads.photos) || []);
+    var video = saved ? (saved.video || "") : ((eventUploads && eventUploads.video) || "");
+    var mediaId = saved ? saved.id : (eventUploads && eventUploads.id);
+    if (state) {
+      state.hidden = !saved;
+      state.textContent = saved ? (saved.published ? "Publicado en Eventos." : "No está en el sitio. Enciende En el sitio para publicarlo.") : "";
+    }
+    title.textContent = name || "Nombre del evento";
+    title.classList.toggle("is-empty", !name);
+    var whenText = "";
+    var parts = date.split("-");
+    if (parts.length === 3) {
+      var parsed = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+      if (!isNaN(parsed.getTime()) && parsed.getFullYear() === Number(parts[0])) {
+        whenText = parsed.toLocaleDateString("es-CO", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+        whenText = whenText.charAt(0).toUpperCase() + whenText.slice(1);
+      }
+    }
+    if (time) whenText = whenText ? whenText + " · " + time : time;
+    when.textContent = whenText || "Fecha y hora";
+    when.classList.toggle("is-empty", !whenText);
+    placeNode.hidden = !place;
+    placeNode.textContent = place;
+    if (!notesText(note)) note = "";
+    noteNode.hidden = !note;
+    noteNode.innerHTML = note;
+    var adjust = document.getElementById("event-preview-adjust");
+    if (adjust) adjust.hidden = !photos.length;
+    var signature = (mediaId || "form") + "|" + photos.join(",") + "|" + video;
+    if (media.getAttribute("data-media") === signature) return;
+    media.setAttribute("data-media", signature);
+    if (eventPreviewIndex >= photos.length) eventPreviewIndex = 0;
+    var html = "";
+    if (photos.length === 1) {
+      html = "<img class=\"event-preview-photo\" data-preview-photo src=\"" + escapeHtml(eventMediaUrl(photos[0], mediaId)) + "\" alt=\"Foto del evento. Pulsa para recortarla.\">";
+    } else if (photos.length > 1) {
+      html = "<div class=\"event-preview-carousel\"><div class=\"event-preview-slides\">" + photos.map(function (file, index) {
+        return "<img data-preview-photo src=\"" + escapeHtml(eventMediaUrl(file, mediaId)) + "\" alt=\"Foto " + (index + 1) + " del evento. Pulsa para recortarla.\"" + (index === eventPreviewIndex ? " class=\"is-on\"" : "") + ">";
+      }).join("") + "</div><button type=\"button\" class=\"event-preview-nav\" data-preview-step=\"-1\" aria-label=\"Foto anterior\">‹</button><button type=\"button\" class=\"event-preview-nav is-next\" data-preview-step=\"1\" aria-label=\"Foto siguiente\">›</button><div class=\"event-preview-dots\">" + photos.map(function (file, index) {
+        return "<button type=\"button\" data-preview-dot=\"" + index + "\" aria-label=\"Foto " + (index + 1) + "\"" + (index === eventPreviewIndex ? " class=\"is-on\" aria-current=\"true\"" : "") + "></button>";
+      }).join("") + "</div></div>";
+    }
+    if (video) html += "<video class=\"event-preview-video\" controls preload=\"metadata\" src=\"" + escapeHtml(eventMediaUrl(video, mediaId)) + "\"></video>";
+    media.innerHTML = html;
+  }
+
+  function bindEventEditor() {
+    var input = document.getElementById("event-note-input");
+    var current = editingEvent ? (eventById(editingEvent) || {}) : {};
+    if (input) input.innerHTML = sanitizeNotes(current.note || "");
+    bindRichField(input, document.getElementById("event-note-count"), eventNoteLimit, showFormPreview);
+    var form = document.getElementById("event-form");
+    if (form) {
+      form.addEventListener("input", showFormPreview);
+      form.addEventListener("change", showFormPreview);
+    }
+    paintEventPreview();
   }
 
   function selectOptions(list, current) {
@@ -380,18 +935,14 @@
     return String(node.textContent || "").length;
   }
 
-  function paintNotesCount() {
-    var input = document.getElementById("player-notes-input");
-    var count = document.getElementById("player-notes-count");
+  function bindRichField(input, count, limit, onChange) {
     if (!input || !count) return;
-    var used = notesLength(input);
-    count.textContent = used + " / " + notesLimit;
-    count.classList.toggle("is-full", used >= notesLimit);
-  }
-
-  function limitNotesField() {
-    var input = document.getElementById("player-notes-input");
-    if (!input) return;
+    function paint() {
+      var used = notesLength(input);
+      count.textContent = used + " / " + limit;
+      count.classList.toggle("is-full", used >= limit);
+      if (onChange) onChange();
+    }
     var saved = input.innerHTML;
     input.addEventListener("beforeinput", function (event) {
       var kind = event.inputType || "";
@@ -401,22 +952,26 @@
       if (kind === "insertParagraph" || kind === "insertLineBreak") extra = 1;
       else if (event.data != null) extra = String(event.data).length;
       else return;
-      if (notesLength(input) - selected + extra > notesLimit) event.preventDefault();
+      if (notesLength(input) - selected + extra > limit) event.preventDefault();
     });
     input.addEventListener("paste", function (event) {
       var text = event.clipboardData ? event.clipboardData.getData("text/plain") : "";
       var selected = window.getSelection() ? String(window.getSelection().toString() || "").length : 0;
-      var room = notesLimit - (notesLength(input) - selected);
+      var room = limit - (notesLength(input) - selected);
       event.preventDefault();
       if (room <= 0 || !text) return;
       document.execCommand("insertText", false, text.slice(0, room));
     });
     input.addEventListener("input", function () {
-      if (notesLength(input) > notesLimit) input.innerHTML = saved;
+      if (notesLength(input) > limit) input.innerHTML = saved;
       else saved = input.innerHTML;
-      paintNotesCount();
+      paint();
     });
-    paintNotesCount();
+    paint();
+  }
+
+  function limitNotesField() {
+    bindRichField(document.getElementById("player-notes-input"), document.getElementById("player-notes-count"), notesLimit);
   }
 
   function readPlayerDraft(form) {
@@ -429,6 +984,7 @@
       country: form.elements.country.value,
       city: form.elements.city.value,
       phone: form.elements.phone.value,
+      documentId: form.elements.documentId.value,
       sede: form.elements.sede.value,
       category: form.elements.category.value,
       extra: form.elements.extra.value,
@@ -440,7 +996,7 @@
 
   function draftInProgress(draft) {
     if (!draft) return false;
-    var keys = ["name", "nickname", "position", "age", "country", "city", "phone", "sede", "category", "extra", "paymentDue"];
+    var keys = ["name", "nickname", "position", "age", "country", "city", "phone", "documentId", "sede", "category", "extra", "paymentDue"];
     if (keys.some(function (key) { return String(draft[key] || "").trim(); })) return true;
     if (draft.status && draft.status !== "pending") return true;
     if (draft.addedOn && draft.addedOn !== todayIso()) return true;
@@ -459,7 +1015,7 @@
     var status = draft.status || "pending";
     var addedOn = draft.addedOn || todayIso();
     function val(key) { return escapeHtml(draft[key] || ""); }
-    return "<form id=\"player-form\" class=\"form-grid roster-form\" novalidate><label class=\"field\">Nombre completo<input name=\"name\" required maxlength=\"80\" value=\"" + val("name") + "\"></label><label class=\"field\">Apodo<input name=\"nickname\" maxlength=\"40\" value=\"" + val("nickname") + "\"></label><label class=\"field\">Posición<select name=\"position\">" + selectOptions(positions, draft.position || "") + "</select></label><label class=\"field\">Edad<input name=\"age\" type=\"number\" min=\"18\" max=\"120\" required value=\"" + val("age") + "\"></label><label class=\"field\">País<input name=\"country\" maxlength=\"60\" value=\"" + val("country") + "\"></label><label class=\"field\">Ciudad<input name=\"city\" maxlength=\"80\" value=\"" + val("city") + "\"></label><label class=\"field\">Teléfono<input name=\"phone\" type=\"tel\" maxlength=\"40\" value=\"" + val("phone") + "\"></label><label class=\"field\">Sede de entrenamiento<select name=\"sede\">" + selectOptions(sedes, draft.sede || "") + "</select></label><label class=\"field\">Categoría<select name=\"category\">" + selectOptions(categories, draft.category || "") + "</select></label><label class=\"field\">Categorías adicionales<select name=\"extra\">" + selectOptions(extras, draft.extra || "") + "</select></label><label class=\"field\">Estado<select name=\"status\">" + statusOptions(status) + "</select></label><label class=\"field\">Agregada el<input name=\"addedOn\" type=\"date\" value=\"" + escapeHtml(addedOn) + "\"></label><label class=\"field\">Vencimiento de la mensualidad<input name=\"paymentDue\" type=\"date\" value=\"" + val("paymentDue") + "\"></label><div class=\"admin-actions\"><button class=\"btn\" type=\"submit\">Agregar jugadora</button></div></form>";
+    return "<form id=\"player-form\" class=\"form-grid roster-form\" novalidate><label class=\"field\">Nombre completo<input name=\"name\" required maxlength=\"80\" value=\"" + val("name") + "\"></label><label class=\"field\">Apodo<input name=\"nickname\" maxlength=\"40\" value=\"" + val("nickname") + "\"></label><label class=\"field\">Posición<select name=\"position\">" + selectOptions(positions, draft.position || "") + "</select></label><label class=\"field\">Edad<input name=\"age\" type=\"number\" min=\"18\" max=\"120\" required value=\"" + val("age") + "\"></label><label class=\"field\">País<input name=\"country\" maxlength=\"60\" value=\"" + val("country") + "\"></label><label class=\"field\">Ciudad<input name=\"city\" maxlength=\"80\" value=\"" + val("city") + "\"></label><label class=\"field\">Teléfono<input name=\"phone\" type=\"tel\" maxlength=\"40\" value=\"" + val("phone") + "\"></label><label class=\"field\">Documento<input name=\"documentId\" type=\"text\" maxlength=\"40\" spellcheck=\"false\" autocomplete=\"off\" value=\"" + val("documentId") + "\"></label><label class=\"field\">Sede de entrenamiento<select name=\"sede\">" + selectOptions(sedes, draft.sede || "") + "</select></label><label class=\"field\">Categoría<select name=\"category\">" + selectOptions(categories, draft.category || "") + "</select></label><label class=\"field\">Categorías adicionales<select name=\"extra\">" + selectOptions(extras, draft.extra || "") + "</select></label><label class=\"field\">Estado<select name=\"status\">" + statusOptions(status) + "</select></label><label class=\"field\">Agregada el<input name=\"addedOn\" type=\"date\" value=\"" + escapeHtml(addedOn) + "\"></label><label class=\"field\">Vencimiento de la mensualidad<input name=\"paymentDue\" type=\"date\" value=\"" + val("paymentDue") + "\"></label><div class=\"admin-actions\"><button class=\"btn\" type=\"submit\">Agregar jugadora</button></div></form>";
   }
 
   function rosterEditor(column, item) {
@@ -474,7 +1030,7 @@
     if (key === "addedOn" || key === "paymentDue") return "<input class=\"roster-cell\" data-field=\"" + key + "\" type=\"date\" value=\"" + escapeHtml(value) + "\">";
     if (key === "notes") return "<span class=\"notes-preview\">" + escapeHtml(notesText(item.notes) || "Sin notas") + "</span>";
     if (key === "photos") return cellHtml(item, "photos");
-    var max = key === "name" ? 80 : key === "nickname" || key === "phone" ? 40 : key === "country" ? 60 : 80;
+    var max = key === "name" ? 80 : key === "nickname" || key === "phone" || key === "documentId" ? 40 : key === "country" ? 60 : 80;
     var required = key === "name" ? " required" : "";
     return "<input class=\"roster-cell\" data-field=\"" + key + "\" type=\"" + (key === "phone" ? "tel" : "text") + "\" maxlength=\"" + max + "\"" + required + " value=\"" + escapeHtml(value) + "\">";
   }
@@ -763,6 +1319,137 @@
     return "<section class=\"roster-layout" + (rosterOpen ? " is-open" : "") + "\"><div class=\"roster-side panel-card\"><button type=\"button\" class=\"roster-toggle\" id=\"roster-toggle\" aria-expanded=\"" + (rosterOpen ? "true" : "false") + "\" aria-controls=\"roster-body\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 9l6 6 6-6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg>Agregar jugadora</button><div id=\"roster-body\"" + (rosterOpen ? "" : " hidden") + "><p>La plantilla pública con fotos no cambia.</p>" + playerForm() + "<div class=\"drop-zone\" id=\"roster-drop\"><p>Suelta el Excel aquí o elige un archivo.</p><div class=\"admin-actions\"><label class=\"btn\" for=\"roster-file\">Elegir Excel</label><a class=\"btn btn-ghost\" href=\"/api/admin/roster/template\">Descargar plantilla</a></div><input id=\"roster-file\" type=\"file\" accept=\".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\" hidden></div></div></div><div class=\"roster-grid panel-card\"><div class=\"roster-toolbar\"><p>Las celdas en rojo repiten el mismo nombre completo y la misma edad.</p><div class=\"roster-toolbar-actions\"><a class=\"btn btn-ghost\" href=\"/api/admin/roster/report\">Generar reporte</a><button class=\"btn btn-danger\" type=\"button\" id=\"bulk-delete\" disabled>Eliminar seleccionadas</button></div></div><div class=\"roster-board\"><div class=\"roster-frame\"><div class=\"roster-scroll\"><table><thead><tr id=\"roster-head\">" + rosterHeadHtml() + "</tr></thead><tbody id=\"roster-rows\">" + rosterRowHtml(rows) + "</tbody></table></div><p id=\"roster-empty\" class=\"roster-empty\"" + emptyHidden + ">" + emptyText + "</p></div><aside class=\"roster-columns" + (columnsOpen ? "" : " is-collapsed") + "\" aria-labelledby=\"roster-columns-title\"><div class=\"roster-columns-head\"><button type=\"button\" class=\"columns-toggle\" id=\"columns-toggle\" aria-expanded=\"" + (columnsOpen ? "true" : "false") + "\" aria-controls=\"roster-column-body\" aria-label=\"" + (columnsOpen ? "Ocultar columnas" : "Mostrar columnas") + "\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 6l6 6-6 6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></button><p id=\"roster-columns-title\" class=\"roster-columns-title\">Columnas</p></div><div id=\"roster-column-body\"><p class=\"roster-columns-note\">Arrastra el icono para cambiar el orden de la tabla.</p><ul id=\"roster-column-list\">" + columnPickerItemsHtml() + "</ul></div></aside></div></div></section>";
   }
 
+  function groupKey(value) {
+    return String(value || "").replace(/(.{4})/g, "$1 ").trim();
+  }
+
+  function settingsPanel() {
+    var codeField = totpEnabled ? "<label class=\"field\" for=\"password-code\">Código de verificación<input id=\"password-code\" inputmode=\"numeric\" autocomplete=\"one-time-code\" maxlength=\"8\" spellcheck=\"false\"></label>" : "";
+    var password = "<article class=\"panel-card settings-card\"><h2>Contraseña</h2><p>La nueva contraseña necesita al menos 12 caracteres, con letras y números.</p><form id=\"password-form\" method=\"post\" action=\"/GFCCaliAdmin\" novalidate><p id=\"password-error\" class=\"form-error\" role=\"alert\" hidden></p><label class=\"field\" for=\"current-password\">Contraseña actual<input id=\"current-password\" type=\"password\" autocomplete=\"current-password\" maxlength=\"128\"></label><label class=\"field\" for=\"next-password\">Nueva contraseña<input id=\"next-password\" type=\"password\" autocomplete=\"new-password\" maxlength=\"128\"></label><label class=\"field\" for=\"confirm-password\">Confirmar contraseña<input id=\"confirm-password\" type=\"password\" autocomplete=\"new-password\" maxlength=\"128\"></label>" + codeField + "<div class=\"admin-actions\"><button class=\"btn\" type=\"submit\">Guardar contraseña</button></div></form></article>";
+    var twoStep;
+    if (totpSetup) {
+      twoStep = "<article class=\"panel-card settings-card\"><h2>Verificación en dos pasos</h2><p>Abre tu app de autenticación y agrega una cuenta a mano con esta clave. Después escribe el código de 6 dígitos para activarla. Guárdala: la vas a necesitar si cambias de teléfono.</p><p class=\"setup-key\" id=\"totp-key\">" + escapeHtml(groupKey(totpSetup.secret)) + "</p><div class=\"admin-actions\"><button class=\"btn btn-ghost\" type=\"button\" id=\"copy-totp-key\">Copiar clave</button><button class=\"btn btn-ghost\" type=\"button\" id=\"copy-totp-link\">Copiar enlace</button></div><form id=\"totp-confirm-form\" method=\"post\" action=\"/GFCCaliAdmin\" novalidate><p id=\"totp-error\" class=\"form-error\" role=\"alert\" hidden></p><label class=\"field\" for=\"totp-confirm-code\">Código de la app<input id=\"totp-confirm-code\" inputmode=\"numeric\" autocomplete=\"one-time-code\" maxlength=\"8\" spellcheck=\"false\"></label><div class=\"admin-actions\"><button class=\"btn\" type=\"submit\">Activar</button><button class=\"btn btn-ghost\" type=\"button\" id=\"totp-cancel\">Cancelar</button></div></form></article>";
+    } else if (totpEnabled) {
+      twoStep = "<article class=\"panel-card settings-card\"><h2>Verificación en dos pasos</h2><p>Está activa. Cada vez que entres, el sitio pedirá un código de 6 dígitos de tu app.</p><form id=\"totp-disable-form\" method=\"post\" action=\"/GFCCaliAdmin\" novalidate><p id=\"totp-error\" class=\"form-error\" role=\"alert\" hidden></p><label class=\"field\" for=\"totp-disable-password\">Contraseña actual<input id=\"totp-disable-password\" type=\"password\" autocomplete=\"current-password\" maxlength=\"128\"></label><label class=\"field\" for=\"totp-disable-code\">Código de la app<input id=\"totp-disable-code\" inputmode=\"numeric\" autocomplete=\"one-time-code\" maxlength=\"8\" spellcheck=\"false\"></label><div class=\"admin-actions\"><button class=\"btn btn-danger\" type=\"submit\">Desactivar</button></div></form></article>";
+    } else {
+      twoStep = "<article class=\"panel-card settings-card\"><h2>Verificación en dos pasos</h2><p>Protege el acceso con un código de una app de autenticación, además de la contraseña.</p><form id=\"totp-start-form\" method=\"post\" action=\"/GFCCaliAdmin\" novalidate><p id=\"totp-error\" class=\"form-error\" role=\"alert\" hidden></p><label class=\"field\" for=\"totp-start-password\">Contraseña actual<input id=\"totp-start-password\" type=\"password\" autocomplete=\"current-password\" maxlength=\"128\"></label><div class=\"admin-actions\"><button class=\"btn\" type=\"submit\">Configurar</button></div></form></article>";
+    }
+    return "<div class=\"settings-layout\">" + password + twoStep + "</div>";
+  }
+
+  function copySetup(value, okText) {
+    if (!value || !navigator.clipboard) {
+      setStatus("Selecciona la clave y cópiala a mano.");
+      return;
+    }
+    navigator.clipboard.writeText(value).then(function () {
+      setStatus(okText);
+    }).catch(function () {
+      setStatus("Selecciona la clave y cópiala a mano.");
+    });
+  }
+
+  function settingsError(form, message) {
+    var node = form.querySelector(".form-error");
+    if (node) showError(node, message);
+  }
+
+  function submitSettings(form) {
+    var button = form.querySelector("button[type=\"submit\"]");
+    if (form.id === "password-form") {
+      var next = document.getElementById("next-password").value;
+      var confirm = document.getElementById("confirm-password").value;
+      if (next !== confirm) {
+        settingsError(form, "La confirmación no coincide.");
+        return;
+      }
+      var payload = {
+        current: document.getElementById("current-password").value,
+        next: next
+      };
+      var passwordCode = document.getElementById("password-code");
+      if (passwordCode) payload.code = passwordCode.value;
+      button.disabled = true;
+      api("/api/admin/password", "POST", payload).then(function (result) {
+        button.disabled = false;
+        if (!result.ok) {
+          settingsError(form, result.data.error || "No se pudo cambiar la contraseña.");
+          return;
+        }
+        csrf = result.data.csrf;
+        totpEnabled = Boolean(result.data.totpEnabled);
+        totpSetup = null;
+        setStatus("Contraseña actualizada.");
+        render();
+      }).catch(function () {
+        button.disabled = false;
+        settingsError(form, "No se pudo completar. Intenta de nuevo.");
+      });
+      return;
+    }
+    if (form.id === "totp-start-form") {
+      button.disabled = true;
+      api("/api/admin/totp/start", "POST", {
+        password: document.getElementById("totp-start-password").value
+      }).then(function (result) {
+        button.disabled = false;
+        if (!result.ok) {
+          settingsError(form, result.data.error || "No se pudo preparar la verificación.");
+          return;
+        }
+        totpSetup = { secret: result.data.secret, otpauth: result.data.otpauth };
+        setStatus("");
+        render();
+        var code = document.getElementById("totp-confirm-code");
+        if (code) code.focus();
+      }).catch(function () {
+        button.disabled = false;
+        settingsError(form, "No se pudo completar. Intenta de nuevo.");
+      });
+      return;
+    }
+    if (form.id === "totp-confirm-form") {
+      button.disabled = true;
+      api("/api/admin/totp/confirm", "POST", {
+        code: document.getElementById("totp-confirm-code").value
+      }).then(function (result) {
+        button.disabled = false;
+        if (!result.ok) {
+          settingsError(form, result.data.error || "El código no es válido.");
+          return;
+        }
+        totpEnabled = true;
+        totpSetup = null;
+        setStatus("Verificación en dos pasos activada.");
+        render();
+      }).catch(function () {
+        button.disabled = false;
+        settingsError(form, "No se pudo completar. Intenta de nuevo.");
+      });
+      return;
+    }
+    if (form.id === "totp-disable-form") {
+      button.disabled = true;
+      api("/api/admin/totp/disable", "POST", {
+        password: document.getElementById("totp-disable-password").value,
+        code: document.getElementById("totp-disable-code").value
+      }).then(function (result) {
+        button.disabled = false;
+        if (!result.ok) {
+          settingsError(form, result.data.error || "No se pudo desactivar.");
+          return;
+        }
+        totpEnabled = false;
+        totpSetup = null;
+        setStatus("Verificación en dos pasos desactivada.");
+        render();
+      }).catch(function () {
+        button.disabled = false;
+        settingsError(form, "No se pudo completar. Intenta de nuevo.");
+      });
+    }
+  }
+
   function render() {
     if (tab === "jugadoras") {
       if (collapseAddForm) {
@@ -777,7 +1464,14 @@
       panel.innerHTML = sitePanel(site);
       return;
     }
-    if (tab === "eventos") panel.innerHTML = eventsPanel();
+    if (tab === "ajustes") {
+      panel.innerHTML = settingsPanel();
+      return;
+    }
+    if (tab === "eventos") {
+      panel.innerHTML = eventsPanel();
+      bindEventEditor();
+    }
     else if (tab === "jugadoras") {
       panel.innerHTML = playersPanel();
       syncRosterSelection();
@@ -792,11 +1486,23 @@
     title.focus();
   }
 
+  function resetLoginCode() {
+    loginTicket = "";
+    var field = document.getElementById("totp-field");
+    var hint = document.getElementById("totp-hint");
+    var code = document.getElementById("totp-code");
+    if (field) field.hidden = true;
+    if (hint) hint.hidden = true;
+    if (code) code.value = "";
+  }
+
   function openLogin() {
     app.hidden = true;
     login.hidden = false;
     csrf = "";
+    totpSetup = null;
     document.getElementById("password").value = "";
+    resetLoginCode();
   }
 
   function loadClub() {
@@ -831,6 +1537,7 @@
         return;
       }
       csrf = result.data.csrf;
+      totpEnabled = Boolean(result.data.totpEnabled);
       return loadClub().then(openApp);
     }).catch(function () {
       devButton.disabled = false;
@@ -843,16 +1550,32 @@
     var button = event.target.querySelector("button");
     button.disabled = true;
     showError(loginError, "");
-    api("/api/login", "POST", {
-      username: document.getElementById("username").value,
-      password: document.getElementById("password").value
-    }).then(function (result) {
+    var payload;
+    if (loginTicket) {
+      payload = { ticket: loginTicket, code: document.getElementById("totp-code").value };
+    } else {
+      payload = {
+        username: document.getElementById("username").value,
+        password: document.getElementById("password").value
+      };
+    }
+    api("/api/login", "POST", payload).then(function (result) {
       button.disabled = false;
       if (!result.ok) {
-        showError(loginError, result.data.error || "Usuario o contraseña incorrectos.");
+        var message = result.data.error || "Usuario o contraseña incorrectos.";
+        if (loginTicket && message.indexOf("Vuelve a entrar") !== -1) resetLoginCode();
+        showError(loginError, message);
+        return;
+      }
+      if (result.data.totpRequired) {
+        loginTicket = result.data.ticket;
+        document.getElementById("totp-field").hidden = false;
+        document.getElementById("totp-hint").hidden = false;
+        document.getElementById("totp-code").focus();
         return;
       }
       csrf = result.data.csrf;
+      totpEnabled = Boolean(result.data.totpEnabled);
       return loadClub().then(openApp);
     }).catch(function () {
       button.disabled = false;
@@ -864,7 +1587,108 @@
     api("/api/logout", "POST", {}).then(openLogin);
   });
 
+  app.addEventListener("mousedown", function (event) {
+    if (event.target.closest("[data-event-note-cmd]")) event.preventDefault();
+  });
+
   app.addEventListener("click", function (event) {
+    var noteCommand = event.target.closest("[data-event-note-cmd]");
+    if (noteCommand) {
+      var noteInput = document.getElementById("event-note-input");
+      if (noteInput) noteInput.focus();
+      document.execCommand(noteCommand.getAttribute("data-event-note-cmd"), false, null);
+      var noteCount = document.getElementById("event-note-count");
+      if (noteInput && noteCount) {
+        noteCount.textContent = notesLength(noteInput) + " / " + eventNoteLimit;
+        noteCount.classList.toggle("is-full", notesLength(noteInput) >= eventNoteLimit);
+      }
+      showFormPreview();
+      return;
+    }
+    var draftPhoto = event.target.closest("[data-adjust-draft-photo]");
+    if (draftPhoto && eventUploads) {
+      openEventPhotoEditor(eventUploads.id, Number(draftPhoto.getAttribute("data-adjust-draft-photo")), "draft");
+      return;
+    }
+    if (event.target.closest("[data-preview-photo], #event-preview-adjust")) {
+      var shown = previewPhotoTarget();
+      openEventPhotoEditor(shown.id, eventPreviewIndex, shown.source === "preview" ? "preview" : "draft");
+      return;
+    }
+    var savedPreview = event.target.closest("[data-preview-event]");
+    if (savedPreview) {
+      previewingSaved = savedPreview.getAttribute("data-preview-event");
+      eventPreviewIndex = 0;
+      var savedMedia = document.getElementById("event-preview-media");
+      if (savedMedia) savedMedia.removeAttribute("data-media");
+      document.querySelectorAll(".record.is-previewing").forEach(function (row) { row.classList.remove("is-previewing"); });
+      var savedRow = savedPreview.closest(".record");
+      if (savedRow) savedRow.classList.add("is-previewing");
+      paintEventPreview();
+      var previewColumn = document.querySelector(".event-preview-column");
+      if (previewColumn) previewColumn.scrollIntoView({ block: "nearest" });
+      return;
+    }
+    var previewStep = event.target.closest("[data-preview-step]");
+    if (previewStep && activePreviewPhotos().length) {
+      var previewCount = activePreviewPhotos().length;
+      eventPreviewIndex = (eventPreviewIndex + Number(previewStep.getAttribute("data-preview-step")) + previewCount) % previewCount;
+      var previewMedia = document.getElementById("event-preview-media");
+      if (previewMedia) previewMedia.removeAttribute("data-media");
+      paintEventPreview();
+      return;
+    }
+    var previewDot = event.target.closest("[data-preview-dot]");
+    if (previewDot) {
+      eventPreviewIndex = Number(previewDot.getAttribute("data-preview-dot"));
+      var dotMedia = document.getElementById("event-preview-media");
+      if (dotMedia) dotMedia.removeAttribute("data-media");
+      paintEventPreview();
+      return;
+    }
+    var removeEventPhoto = event.target.closest("[data-remove-event-photo]");
+    if (removeEventPhoto && eventUploads) {
+      var photoIndex = Number(removeEventPhoto.getAttribute("data-remove-event-photo"));
+      var removedPhoto = eventUploads.photos[photoIndex];
+      eventUploads.photos.splice(photoIndex, 1);
+      paintEventMedia();
+      releaseEventFile(eventUploads.id, removedPhoto);
+      eventMediaStatus("event-photo-status", "Foto quitada.");
+      return;
+    }
+    if (event.target.closest("[data-remove-event-video]") && eventUploads) {
+      var removedVideo = eventUploads.video;
+      eventUploads.video = "";
+      paintEventMedia();
+      releaseEventFile(eventUploads.id, removedVideo);
+      eventMediaStatus("event-video-status", "Video quitado.");
+      return;
+    }
+    var eventPhotoDrop = event.target.closest("#event-photo-drop");
+    if (eventPhotoDrop && eventUploads && eventUploads.photos.length < 5 && event.target.id !== "event-photo-file") {
+      var photoInput = document.getElementById("event-photo-file");
+      if (photoInput) photoInput.click();
+      return;
+    }
+    var eventVideoDrop = event.target.closest("#event-video-drop");
+    if (eventVideoDrop && eventUploads && event.target.id !== "event-video-file") {
+      var videoInput = document.getElementById("event-video-file");
+      if (videoInput) videoInput.click();
+      return;
+    }
+    if (event.target.closest("#totp-cancel")) {
+      totpSetup = null;
+      api("/api/admin/totp/cancel", "POST", {}).then(function () { render(); });
+      return;
+    }
+    if (event.target.closest("#copy-totp-key")) {
+      copySetup(totpSetup && totpSetup.secret, "Clave copiada.");
+      return;
+    }
+    if (event.target.closest("#copy-totp-link")) {
+      copySetup(totpSetup && totpSetup.otpauth, "Enlace copiado.");
+      return;
+    }
     var tabButton = event.target.closest("[data-tab]");
     if (tabButton) {
       var nextTab = tabButton.getAttribute("data-tab");
@@ -873,8 +1697,10 @@
         if (!playerDraft && !pendingPlayer) rosterOpen = false;
       }
       if (nextTab === "jugadoras" && tab !== "jugadoras") rosterOpen = !!(playerDraft || pendingPlayer);
+      var leavingEvents = tab === "eventos" && (nextTab !== "eventos" || editingEvent || (eventUploads && (eventUploads.photos.length || eventUploads.video)));
+      if (leavingEvents) discardEventDraft();
       tab = nextTab;
-      editingEvent = "";
+      if (!leavingEvents) editingEvent = "";
       editingPlayer = "";
       setStatus("");
       render();
@@ -883,8 +1709,20 @@
     }
     var editEvent = event.target.closest("[data-edit-event]");
     if (editEvent) {
-      editingEvent = editEvent.getAttribute("data-edit-event");
-      render();
+      var nextEventId = editEvent.getAttribute("data-edit-event");
+      var openEvent = function () {
+        editingEvent = nextEventId;
+        eventUploads = null;
+        previewingSaved = "";
+        render();
+        var form = document.getElementById("event-form");
+        if (form) form.scrollIntoView({ block: "nearest" });
+      };
+      if (eventUploads && eventUploads.id !== nextEventId) {
+        discardEventDraft().then(openEvent);
+        return;
+      }
+      openEvent();
       return;
     }
     var deleteEvent = event.target.closest("[data-delete-event]");
@@ -892,7 +1730,10 @@
       var eventId = deleteEvent.getAttribute("data-delete-event");
       var found = events.filter(function (item) { return item.id === eventId; })[0];
       if (!found || !window.confirm("¿Quitar el evento " + found.name + "?")) return;
+      if (previewingSaved === eventId) previewingSaved = "";
       events = events.filter(function (item) { return item.id !== eventId; });
+      if (eventUploads && eventUploads.id === eventId) eventUploads = null;
+      editingEvent = "";
       api("/api/admin/events", "PUT", { events: events }).then(function (result) {
         if (!result.ok) { setStatus(result.data.error || "No se pudo quitar."); return; }
         events = result.data.events;
@@ -903,8 +1744,7 @@
       return;
     }
     if (event.target.id === "cancel-event") {
-      editingEvent = "";
-      render();
+      discardEventDraft().then(function () { render(); });
       return;
     }
     var sortButton = event.target.closest("[data-sort]");
@@ -1233,6 +2073,7 @@
     var input = event.target.closest("[data-visible]");
     if (!input) return;
     var id = input.getAttribute("data-visible");
+    if (!settings.pages[id]) settings.pages[id] = { visible: true };
     var previous = settings.pages[id].visible;
     settings.pages[id].visible = input.checked;
     settings.pages.inicio.visible = true;
@@ -1249,16 +2090,27 @@
   });
 
   app.addEventListener("submit", function (event) {
+    if (event.target.id === "password-form" || event.target.id === "totp-start-form" || event.target.id === "totp-confirm-form" || event.target.id === "totp-disable-form") {
+      event.preventDefault();
+      submitSettings(event.target);
+      return;
+    }
     if (event.target.id === "event-form") {
       event.preventDefault();
+      if (eventUploadBusy) { setStatus("Espera a que terminen las fotos o el video."); return; }
       var data = new FormData(event.target);
+      var draft = eventDraft();
+      var existing = eventById(draft.id);
       var next = {
-        id: editingEvent || ("e-" + Date.now().toString(36)),
+        id: draft.id,
         name: String(data.get("name") || ""),
         date: String(data.get("date") || ""),
         time: String(data.get("time") || ""),
         place: String(data.get("place") || ""),
-        note: String(data.get("note") || "")
+        note: eventNoteValue(),
+        published: existing ? existing.published === true : false,
+        photos: draft.photos.slice(),
+        video: draft.video || ""
       };
       var list = events.filter(function (item) { return item.id !== next.id; });
       list.push(next);
@@ -1266,7 +2118,9 @@
         if (!result.ok) { setStatus(result.data.error || "Revisa los datos del evento."); return; }
         events = result.data.events;
         editingEvent = "";
-        setStatus("Evento guardado.");
+        eventUploads = null;
+        previewingSaved = "";
+        setStatus(next.published ? "Evento guardado." : "Evento guardado. Enciende En el sitio para publicarlo.");
         render();
       });
     }
@@ -1282,6 +2136,7 @@
         country: String(form.get("country") || ""),
         city: String(form.get("city") || ""),
         phone: String(form.get("phone") || ""),
+        documentId: String(form.get("documentId") || ""),
         sede: String(form.get("sede") || ""),
         category: String(form.get("category") || ""),
         extra: String(form.get("extra") || ""),
@@ -1605,6 +2460,7 @@
       infoField("País", "<input name=\"country\" maxlength=\"60\" value=\"" + escapeHtml(item.country) + "\">"),
       infoField("Ciudad", "<input name=\"city\" maxlength=\"80\" value=\"" + escapeHtml(item.city) + "\">"),
       infoField("Teléfono", "<input name=\"phone\" type=\"tel\" maxlength=\"40\" value=\"" + escapeHtml(item.phone) + "\">"),
+      infoField("Documento", "<input name=\"documentId\" type=\"text\" maxlength=\"40\" spellcheck=\"false\" autocomplete=\"off\" value=\"" + escapeHtml(item.documentId || "") + "\">"),
       infoField("Sede de entrenamiento", "<select name=\"sede\">" + selectOptions(sedes, item.sede) + "</select>"),
       infoField("Categoría", "<select name=\"category\">" + selectOptions(categories, item.category) + "</select>"),
       infoField("Categorías adicionales", "<select name=\"extra\">" + selectOptions(extras, item.extra) + "</select>"),
@@ -1674,6 +2530,7 @@
       country: String(form.get("country") || ""),
       city: String(form.get("city") || ""),
       phone: String(form.get("phone") || ""),
+      documentId: String(form.get("documentId") || ""),
       sede: String(form.get("sede") || ""),
       category: String(form.get("category") || ""),
       extra: String(form.get("extra") || ""),
@@ -1743,6 +2600,86 @@
     event.target.value = "";
     addPhotoFiles(picked);
   });
+  app.addEventListener("change", function (event) {
+    if (event.target.matches("[data-publish-event]")) {
+      var publishId = event.target.getAttribute("data-publish-event");
+      var savedEvent = eventById(publishId);
+      if (!savedEvent) return;
+      var wantPublished = event.target.checked;
+      var wasPublished = savedEvent.published === true;
+      savedEvent.published = wantPublished;
+      var publishBox = event.target;
+      api("/api/admin/events", "PUT", { events: events }).then(function (result) {
+        if (!result.ok) {
+          savedEvent.published = wasPublished;
+          publishBox.checked = wasPublished;
+          setStatus(result.data.error || "No se pudo guardar.");
+          return;
+        }
+        events = result.data.events;
+        setStatus(wantPublished ? "Evento publicado en el sitio." : "El evento ya no se muestra en el sitio.");
+        var flagHost = publishBox.closest(".record");
+        var item = eventById(publishId) || savedEvent;
+        if (flagHost) {
+          var flags = flagHost.querySelector(".record-flags");
+          var bits = [];
+          if (item.published) bits.push("En el sitio");
+          var photoCount = item.photos && item.photos.length ? item.photos.length : 0;
+          if (photoCount) bits.push(photoCount + (photoCount === 1 ? " foto" : " fotos"));
+          if (item.video) bits.push("Video");
+          if (!bits.length) {
+            if (flags) flags.remove();
+          } else {
+            if (!flags) {
+              flags = document.createElement("p");
+              flags.className = "record-flags";
+              var copy = flagHost.querySelector("div");
+              if (copy) copy.appendChild(flags);
+            }
+            flags.innerHTML = bits.map(function (flag) { return "<span class=\"record-flag\">" + escapeHtml(flag) + "</span>"; }).join("");
+          }
+        }
+        if (previewingSaved === publishId) paintEventPreview();
+      });
+      return;
+    }
+    if (event.target.id === "event-photo-file") {
+      var pickedPhotos = Array.prototype.slice.call(event.target.files || []);
+      event.target.value = "";
+      addEventPhotos(pickedPhotos);
+      return;
+    }
+    if (event.target.id === "event-video-file") {
+      var pickedVideo = event.target.files && event.target.files[0];
+      event.target.value = "";
+      addEventVideo(pickedVideo);
+    }
+  });
+  function eventDropZone(target) {
+    var node = target && target.closest ? target : (target && target.parentElement);
+    return node && node.closest ? node.closest("#event-photo-drop, #event-video-drop") : null;
+  }
+  app.addEventListener("dragover", function (event) {
+    var zone = eventDropZone(event.target);
+    if (!zone || !eventUploads) return;
+    event.preventDefault();
+    if (zone.id === "event-photo-drop" && eventUploads.photos.length >= 5) return;
+    zone.classList.add("is-over");
+  });
+  app.addEventListener("dragleave", function (event) {
+    var zone = eventDropZone(event.target);
+    if (!zone || zone.contains(event.relatedTarget)) return;
+    zone.classList.remove("is-over");
+  });
+  app.addEventListener("drop", function (event) {
+    var zone = eventDropZone(event.target);
+    if (!zone || !eventUploads) return;
+    event.preventDefault();
+    zone.classList.remove("is-over");
+    var dropped = event.dataTransfer && event.dataTransfer.files;
+    if (zone.id === "event-photo-drop") addEventPhotos(dropped);
+    else addEventVideo(dropped && dropped[0]);
+  });
   infoDialog.addEventListener("input", paintStatusHint);
   var photoCanvas = document.getElementById("photo-editor-canvas");
   photoCanvas.addEventListener("pointerdown", function (event) {
@@ -1765,6 +2702,39 @@
   document.getElementById("photo-zoom-in").addEventListener("click", function () { setEditorZoom(editorZoom + 0.15); });
   document.getElementById("apply-photo-edit").addEventListener("click", applyPhotoEdit);
   document.getElementById("close-photo-editor").addEventListener("click", closePhotoEditor);
+  var eventPhotoDialog = document.getElementById("event-photo-dialog");
+  var eventPhotoCanvas = document.getElementById("event-photo-canvas");
+  eventPhotoDialog.addEventListener("click", function (event) {
+    var ratioButton = event.target.closest("[data-photo-ratio]");
+    if (!ratioButton) return;
+    eventEditorRatio = ratioButton.getAttribute("data-photo-ratio");
+    resetEventEditorFrame();
+  });
+  eventPhotoDialog.addEventListener("close", function () {
+    eventEditorImage = null;
+    eventEditorDrag = null;
+    eventEditorIndex = -1;
+  });
+  eventPhotoCanvas.addEventListener("pointerdown", function (event) {
+    if (!eventEditorImage) return;
+    eventEditorDrag = { id: event.pointerId, x: event.clientX, y: event.clientY, ox: eventEditorX, oy: eventEditorY };
+    eventPhotoCanvas.setPointerCapture(event.pointerId);
+  });
+  eventPhotoCanvas.addEventListener("pointermove", function (event) {
+    if (!eventEditorDrag || event.pointerId !== eventEditorDrag.id) return;
+    eventEditorX = eventEditorDrag.ox + (event.clientX - eventEditorDrag.x);
+    eventEditorY = eventEditorDrag.oy + (event.clientY - eventEditorDrag.y);
+    paintEventPhotoEditor();
+  });
+  eventPhotoCanvas.addEventListener("pointerup", function () { eventEditorDrag = null; });
+  eventPhotoCanvas.addEventListener("pointercancel", function () { eventEditorDrag = null; });
+  document.getElementById("event-photo-zoom").addEventListener("input", function (event) {
+    setEventEditorZoom(Number(event.target.value) || 1);
+  });
+  document.getElementById("event-photo-zoom-out").addEventListener("click", function () { setEventEditorZoom(eventEditorZoom - 0.15); });
+  document.getElementById("event-photo-zoom-in").addEventListener("click", function () { setEventEditorZoom(eventEditorZoom + 0.15); });
+  document.getElementById("apply-event-photo").addEventListener("click", applyEventPhotoEdit);
+  document.getElementById("close-event-photo").addEventListener("click", closeEventPhotoEditor);
   infoDialog.addEventListener("cancel", function (event) {
     if (!document.getElementById("player-photo-editor").hidden) {
       event.preventDefault();
@@ -1850,6 +2820,7 @@
         country: nextPlayer.country,
         city: nextPlayer.city,
         phone: nextPlayer.phone,
+        documentId: nextPlayer.documentId,
         sede: nextPlayer.sede,
         category: nextPlayer.category,
         extra: nextPlayer.extra,
@@ -1911,40 +2882,10 @@
     saveRoster(players.filter(function (item) { return ids.indexOf(item.id) === -1; }), message);
   });
 
-  var passwordDialog = document.getElementById("password-dialog");
-  document.getElementById("open-password").addEventListener("click", function () {
-    showError(document.getElementById("password-error"), "");
-    passwordDialog.showModal();
-  });
-  document.getElementById("close-password").addEventListener("click", function () {
-    passwordDialog.close();
-  });
-  document.getElementById("password-form").addEventListener("submit", function (event) {
-    event.preventDefault();
-    var next = document.getElementById("next-password").value;
-    var confirm = document.getElementById("confirm-password").value;
-    if (next !== confirm) {
-      showError(document.getElementById("password-error"), "La confirmación no coincide.");
-      return;
-    }
-    api("/api/admin/password", "POST", {
-      current: document.getElementById("current-password").value,
-      next: next
-    }).then(function (result) {
-      if (!result.ok) {
-        showError(document.getElementById("password-error"), result.data.error || "No se pudo cambiar la contraseña.");
-        return;
-      }
-      csrf = result.data.csrf;
-      event.target.reset();
-      passwordDialog.close();
-      setStatus("Contraseña actualizada.");
-    });
-  });
-
   api("/api/session", "GET").then(function (result) {
     if (!result.ok) return;
     csrf = result.data.csrf;
+    totpEnabled = Boolean(result.data.totpEnabled);
     loadClub().then(openApp).catch(openLogin);
   });
 })();

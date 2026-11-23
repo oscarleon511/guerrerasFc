@@ -11,8 +11,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/admin.css?v=38">
+  <link rel="stylesheet" href="css/styles.css?v=44">
+  <link rel="stylesheet" href="css/admin.css?v=44">
 </head>
 <body class="admin-body">
   <main id="login" class="login-screen">
@@ -28,6 +28,10 @@
         <label class="field" for="password">Contraseña
           <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="128">
         </label>
+        <label class="field" id="totp-field" for="totp-code" hidden>Código de verificación
+          <input id="totp-code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" spellcheck="false">
+        </label>
+        <p id="totp-hint" class="field-hint" hidden>Escribe el código de 6 dígitos de tu app de autenticación.</p>
         <button class="btn" type="submit">Entrar</button>
       </form>
       <button class="btn btn-ghost" type="button" id="dev-login" hidden>Entrar en modo desarrollo</button>
@@ -49,13 +53,16 @@
       <nav id="site-tabs" class="admin-nav" aria-label="Páginas del sitio"></nav>
       <p class="admin-kicker">Club</p>
       <nav id="club-tabs" class="admin-nav" aria-label="Gestión del club"></nav>
+      <button class="admin-settings" type="button" id="open-settings" data-tab="ajustes" aria-label="Ajustes">
+        <span class="nav-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="1.8"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+        <span class="nav-label">Ajustes</span>
+      </button>
     </aside>
     <section class="admin-main">
       <header class="admin-top">
         <h1 id="panel-title" tabindex="-1">Inicio</h1>
         <div class="admin-actions">
           <a class="btn btn-ghost" href="index.html" target="_blank" rel="noopener noreferrer">Ver el sitio</a>
-          <button class="btn btn-ghost" type="button" id="open-password">Contraseña</button>
           <button class="btn" type="button" id="logout">Salir</button>
         </div>
       </header>
@@ -139,25 +146,32 @@
     </div>
   </dialog>
 
-  <dialog id="password-dialog" class="password-dialog" aria-labelledby="password-title">
-    <form id="password-form" method="post" action="/GFCCaliAdmin">
-      <h2 id="password-title">Cambiar contraseña</h2>
-      <p id="password-error" class="form-error" role="alert" hidden></p>
-      <label class="field" for="current-password">Contraseña actual
-        <input id="current-password" type="password" autocomplete="current-password" required maxlength="128">
-      </label>
-      <label class="field" for="next-password">Nueva contraseña
-        <input id="next-password" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
-      </label>
-      <label class="field" for="confirm-password">Confirmar contraseña
-        <input id="confirm-password" type="password" autocomplete="new-password" required minlength="12" maxlength="128">
-      </label>
-      <div class="admin-actions">
-        <button class="btn" type="submit">Guardar</button>
-        <button class="btn btn-ghost" type="button" id="close-password">Cancelar</button>
-      </div>
-    </form>
+  <dialog id="event-photo-dialog" class="password-dialog event-photo-dialog" aria-labelledby="event-photo-editor-title">
+    <h2 id="event-photo-editor-title">Ajustar foto</h2>
+    <p class="field-hint">Elige el formato, arrastra la foto y acércala. Al guardar, la vista previa y la página Eventos muestran este recorte.</p>
+    <div class="photo-ratios" role="group" aria-label="Formato de la foto">
+      <button type="button" data-photo-ratio="site">Sitio</button>
+      <button type="button" data-photo-ratio="instagram">Instagram</button>
+      <button type="button" data-photo-ratio="portrait">Vertical</button>
+      <button type="button" data-photo-ratio="story">Historia</button>
+      <button type="button" data-photo-ratio="facebook">Facebook</button>
+    </div>
+    <p id="event-photo-ratio-hint" class="field-hint"></p>
+    <div class="photo-editor-stage">
+      <canvas id="event-photo-canvas" width="320" height="200" aria-label="Encuadre de la foto"></canvas>
+    </div>
+    <div class="photo-zoom">
+      <button type="button" id="event-photo-zoom-out" aria-label="Alejar">−</button>
+      <input id="event-photo-zoom" type="range" min="1" max="3" step="0.01" value="1" aria-label="Zoom">
+      <button type="button" id="event-photo-zoom-in" aria-label="Acercar">+</button>
+    </div>
+    <p id="event-photo-editor-status" class="player-info-status" role="status"></p>
+    <div class="admin-actions">
+      <button class="btn" type="button" id="apply-event-photo">Guardar recorte</button>
+      <button class="btn btn-ghost" type="button" id="close-event-photo">Cancelar</button>
+    </div>
   </dialog>
-  <script src="js/admin.js?v=32"></script>
+
+  <script src="js/admin.js?v=40"></script>
 </body>
 </html>
