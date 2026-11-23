@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css">
-  <link rel="stylesheet" href="css/admin.css?v=8">
+  <link rel="stylesheet" href="css/admin.css?v=38">
 </head>
 <body class="admin-body">
   <main id="login" class="login-screen">
@@ -36,10 +36,15 @@
 
   <div id="app" class="admin-shell" hidden>
     <aside class="admin-side">
-      <a class="admin-brand" href="index.html">
-        <img src="assets/logo.png" width="512" height="512" alt="">
-        <span>Guerreras FC</span>
-      </a>
+      <div class="admin-side-head">
+        <a class="admin-brand" href="index.html">
+          <img src="assets/logo.png" width="512" height="512" alt="">
+          <span>Guerreras FC</span>
+        </a>
+        <button class="side-toggle" type="button" id="side-toggle" aria-expanded="true" aria-controls="site-tabs" aria-label="Ocultar el menú">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        </button>
+      </div>
       <p class="admin-kicker">Sitio</p>
       <nav id="site-tabs" class="admin-nav" aria-label="Páginas del sitio"></nav>
       <p class="admin-kicker">Club</p>
@@ -67,10 +72,70 @@
   <dialog id="delete-player-dialog" class="password-dialog" aria-labelledby="delete-player-title">
     <h2 id="delete-player-title">Eliminar jugadora</h2>
     <p id="delete-player-copy"></p>
-    <p>Esta acción borra a la jugadora de forma permanente. No se podrá recuperar.</p>
+    <p id="delete-player-note">Esta acción borra a la jugadora de forma permanente. No se podrá recuperar.</p>
     <div class="admin-actions">
       <button class="btn btn-danger" type="button" id="confirm-delete-player">Eliminar</button>
       <button class="btn btn-ghost" type="button" id="cancel-delete-player">Cancelar</button>
+    </div>
+  </dialog>
+
+  <dialog id="duplicate-player-dialog" class="password-dialog" aria-labelledby="duplicate-player-title">
+    <h2 id="duplicate-player-title">Jugadora repetida</h2>
+    <p id="duplicate-player-copy"></p>
+    <p>Puedes agregarla de todos modos. Las celdas del nombre y la edad quedarán en rojo.</p>
+    <div class="admin-actions">
+      <button class="btn" type="button" id="confirm-duplicate-player">Agregar de todos modos</button>
+      <button class="btn btn-ghost" type="button" id="cancel-duplicate-player">Cancelar</button>
+    </div>
+  </dialog>
+
+  <dialog id="duplicate-upload-dialog" class="password-dialog duplicate-upload-dialog" aria-labelledby="duplicate-upload-title">
+    <h2 id="duplicate-upload-title">Jugadoras repetidas</h2>
+    <p id="duplicate-upload-copy"></p>
+    <ul id="duplicate-upload-list" class="duplicate-list"></ul>
+    <div class="admin-actions">
+      <button class="btn" type="button" id="confirm-duplicate-upload">Agregar de todos modos</button>
+      <button class="btn btn-ghost" type="button" id="cancel-duplicate-upload">Cancelar</button>
+    </div>
+  </dialog>
+
+  <dialog id="player-notes-dialog" class="password-dialog notes-dialog" aria-labelledby="player-notes-title">
+    <h2 id="player-notes-title">Notas</h2>
+    <div id="player-notes-view" class="notes-view"></div>
+    <div class="admin-actions">
+      <button class="btn btn-ghost" type="button" id="close-player-notes">Cerrar</button>
+    </div>
+  </dialog>
+
+  <dialog id="player-info-dialog" class="password-dialog player-info-dialog" aria-labelledby="player-info-title">
+    <form id="player-info-form" method="post" action="/GFCCaliAdmin" novalidate>
+      <h2 id="player-info-title">Jugadora</h2>
+      <div class="player-info-scroll">
+        <p class="field-hint">La mensualidad se cobra durante 5 días a partir del vencimiento, cada mes. Si el día es el 1, el pago corresponde del 1 al 5. Pasados esos días, sin un pago recibido, el estado se muestra como Activa (tarde).</p>
+        <div id="player-info-fields" class="form-grid"></div>
+      </div>
+      <p id="player-info-status" class="player-info-status" role="status"></p>
+      <div class="admin-actions">
+        <button class="btn" type="submit">Guardar</button>
+        <button class="btn btn-ghost" type="button" id="close-player-info">Cancelar</button>
+      </div>
+    </form>
+    <div id="player-photo-editor" class="photo-editor" hidden>
+      <h2 id="photo-editor-title">Ajustar foto</h2>
+      <p class="field-hint">Arrastra la foto para encuadrarla. Acerca o aleja el cuadro y pulsa Guardar para actualizar la foto.</p>
+      <div class="photo-editor-stage">
+        <canvas id="photo-editor-canvas" width="320" height="320" aria-label="Encuadre de la foto"></canvas>
+      </div>
+      <div class="photo-zoom">
+        <button type="button" id="photo-zoom-out" aria-label="Alejar">−</button>
+        <input id="photo-editor-zoom" type="range" min="1" max="3" step="0.01" value="1" aria-label="Zoom">
+        <button type="button" id="photo-zoom-in" aria-label="Acercar">+</button>
+      </div>
+      <p id="photo-editor-status" class="player-info-status" role="status"></p>
+      <div class="admin-actions">
+        <button class="btn" type="button" id="apply-photo-edit">Guardar</button>
+        <button class="btn btn-ghost" type="button" id="close-photo-editor">Cancelar</button>
+      </div>
     </div>
   </dialog>
 
@@ -93,6 +158,6 @@
       </div>
     </form>
   </dialog>
-  <script src="js/admin.js?v=7"></script>
+  <script src="js/admin.js?v=32"></script>
 </body>
 </html>

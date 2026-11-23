@@ -5,3 +5,4 @@ node_modules/
 data/admin-auth.json
 data/telemetry.json
 data/*.tmp
+data/player-photos/

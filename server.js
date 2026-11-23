@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
-const { rowsFromWorkbook } = require("./lib/sheet");
+const { rowsFromWorkbook, rosterWorkbook } = require("./lib/sheet");
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT) || 3000;
@@ -14,6 +14,7 @@ const AUTH_FILE = path.join(DATA, "admin-auth.json");
 const SETTINGS_FILE = path.join(DATA, "site-settings.json");
 const PLAYERS_FILE = path.join(DATA, "players.json");
 const ROSTER_FILE = path.join(DATA, "roster.json");
+const PHOTO_DIR = path.join(DATA, "player-photos");
 const TEMPLATE_FILE = path.join(DATA, "roster-template.xlsx");
 const EVENTS_FILE = path.join(DATA, "events.json");
 const TELEMETRY_FILE = path.join(DATA, "telemetry.json");
@@ -75,6 +76,8 @@ const TYPES = {
 const POSITIONS = ["POR", "DEF", "CEN", "DEL"];
 const ASSET = /^assets\/plantilla\/[a-z0-9-]+\.(jpg|jpeg|png|webp)$/i;
 const ID = /^[a-zA-Z0-9_-]{1,40}$/;
+const PHOTO_NAME = /^[a-f0-9]{16}\.(jpg|png|webp)$/;
+const STATUSES = ["active", "suspended", "pending", "late"];
 
 const sessions = new Map();
 const loginAttempts = new Map();
@@ -304,6 +307,94 @@ function validDate(value) {
   return date.getUTCFullYear() === parts[0] && date.getUTCMonth() === parts[1] - 1 && date.getUTCDate() === parts[2];
 }
 
+function cleanDate(value) {
+  const text = cleanText(value, 10);
+  return validDate(text) ? text : "";
+}
+
+function uploadDate() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return now.getFullYear() + "-" + month + "-" + day;
+}
+
+function cleanStatus(value) {
+  const text = cleanText(value, 20);
+  return STATUSES.includes(text) ? text : "active";
+}
+
+function cleanNotes(value) {
+  const allowed = { b: 1, strong: 1, i: 1, em: 1, u: 1, p: 1, br: 1, ul: 1, ol: 1, li: 1, div: 1 };
+  let html = String(value == null ? "" : value).replace(/\0/g, "").slice(0, 24000);
+  html = html.replace(/<\s*(script|style|iframe|object)[^>]*>[\s\S]*?<\s*\/\s*\1\s*>/gi, "");
+  html = html.replace(/<!--[\s\S]*?-->/g, "");
+  html = html.replace(/<[^>]+>/g, function (tag) {
+    const match = /^<\s*(\/)?\s*([a-z0-9]+)/i.exec(tag);
+    if (!match) return "";
+    const name = match[2].toLowerCase();
+    if (!allowed[name]) return "";
+    if (name === "br") return "<br>";
+    return match[1] ? "</" + name + ">" : "<" + name + ">";
+  });
+  return html.trim();
+}
+
+function cleanPhotos(value) {
+  if (!Array.isArray(value)) return [];
+  const names = [];
+  value.forEach(function (item) {
+    const name = cleanText(item, 24);
+    if (PHOTO_NAME.test(name) && names.indexOf(name) === -1) names.push(name);
+  });
+  return names.slice(0, 5);
+}
+
+function playerPhotoDir(id) {
+  if (!ID.test(id)) return null;
+  const dir = path.resolve(PHOTO_DIR, id);
+  const relative = path.relative(PHOTO_DIR, dir);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return dir;
+}
+
+function imageKind(buffer) {
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return "jpg";
+  if (buffer.length >= 8 && buffer[0] === 0x89 && buffer.toString("ascii", 1, 4) === "PNG") return "png";
+  if (buffer.length >= 12 && buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") return "webp";
+  return "";
+}
+
+function removeDir(dir) {
+  if (!fs.existsSync(dir)) return;
+  fs.readdirSync(dir).forEach(function (entry) {
+    const full = path.join(dir, entry);
+    if (fs.statSync(full).isDirectory()) removeDir(full);
+    else fs.unlinkSync(full);
+  });
+  fs.rmdirSync(dir);
+}
+
+function syncRosterPhotos(players) {
+  const keep = {};
+  players.forEach(function (player) {
+    keep[player.id] = {};
+    player.photos.forEach(function (name) { keep[player.id][name] = true; });
+  });
+  if (!fs.existsSync(PHOTO_DIR)) return;
+  fs.readdirSync(PHOTO_DIR).forEach(function (entry) {
+    const dir = playerPhotoDir(entry);
+    if (!dir || !fs.statSync(dir).isDirectory()) return;
+    if (!keep[entry]) {
+      removeDir(dir);
+      return;
+    }
+    fs.readdirSync(dir).forEach(function (file) {
+      if (!keep[entry][file]) fs.unlinkSync(path.join(dir, file));
+    });
+  });
+}
+
 function validPlayers(list) {
   if (!Array.isArray(list) || list.length > 60) return null;
   const ids = new Set();
@@ -354,6 +445,57 @@ function withDuplicates(list) {
   });
 }
 
+function parsedImport(body) {
+  const raw = String(body && body.file || "").replace(/\s/g, "");
+  if (!/^[A-Za-z0-9+/=]+$/.test(raw) || raw.length < 20) return { error: "El archivo no se pudo leer." };
+  const buffer = Buffer.from(raw, "base64");
+  if (buffer.length < 4 || buffer.length > 2500000 || buffer.readUInt32LE(0) !== 0x04034b50) {
+    return { error: "El archivo no se pudo leer." };
+  }
+  let rows;
+  try {
+    rows = rowsFromWorkbook(buffer);
+  } catch (error) {
+    return {
+      error: error && error.message === "columns"
+        ? "El archivo no tiene las columnas de la plantilla."
+        : "El archivo no se pudo leer."
+    };
+  }
+  if (!rows.length) return { error: "El archivo no tiene jugadoras." };
+  const addedOn = uploadDate();
+  const incoming = validRoster(rows.map(function (row) {
+    return Object.assign({ id: "r-" + crypto.randomBytes(6).toString("hex") }, row, { addedOn: addedOn });
+  }));
+  if (!incoming) return { error: "Revisa los datos del archivo." };
+  return { incoming: incoming };
+}
+
+function importDuplicates(current, incoming) {
+  const existing = {};
+  current.forEach(function (item) {
+    const key = rosterKey(item);
+    if (key) existing[key] = true;
+  });
+  const fileCounts = {};
+  incoming.forEach(function (item) {
+    const key = rosterKey(item);
+    if (key) fileCounts[key] = (fileCounts[key] || 0) + 1;
+  });
+  const seen = {};
+  const duplicates = [];
+  incoming.forEach(function (item) {
+    const key = rosterKey(item);
+    if (!key || seen[key]) return;
+    const inRoster = Boolean(existing[key]);
+    const inFile = fileCounts[key] > 1;
+    if (!inRoster && !inFile) return;
+    seen[key] = true;
+    duplicates.push({ name: item.name, age: item.age, inRoster: inRoster, inFile: inFile });
+  });
+  return duplicates;
+}
+
 function validRoster(list) {
   if (!Array.isArray(list) || list.length > 500) return null;
   const ids = new Set();
@@ -383,7 +525,13 @@ function validRoster(list) {
       phone: cleanText(item.phone, 40),
       sede: cleanText(item.sede, 60),
       category: cleanText(item.category, 20),
-      extra: cleanText(item.extra, 80)
+      extra: cleanText(item.extra, 80),
+      status: cleanStatus(item.status),
+      addedOn: cleanDate(item.addedOn),
+      paymentDue: cleanDate(item.paymentDue),
+      paidOn: cleanDate(item.paidOn),
+      notes: cleanNotes(item.notes),
+      photos: cleanPhotos(item.photos)
     });
   }
   return players;
@@ -601,6 +749,18 @@ async function handleApi(req, res, pathname) {
     writeJson(EVENTS_FILE, events);
     return sendJson(res, 200, { events: events });
   }
+  if (req.method === "GET" && pathname === "/api/admin/roster/report") {
+    const stored = readJson(ROSTER_FILE, []);
+    const file = rosterWorkbook(Array.isArray(stored) ? stored : []);
+    const stamp = uploadDate();
+    res.writeHead(200, baseHeaders({
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": "attachment; filename=\"Jugadoras-" + stamp + ".xlsx\"",
+      "Content-Length": file.length,
+      "X-Robots-Tag": "noindex, nofollow"
+    }));
+    return res.end(file);
+  }
   if (req.method === "GET" && pathname === "/api/admin/roster/template") {
     if (!fs.existsSync(TEMPLATE_FILE)) return sendJson(res, 404, { error: "No encontrada." });
     const file = fs.readFileSync(TEMPLATE_FILE);
@@ -616,40 +776,70 @@ async function handleApi(req, res, pathname) {
     const stored = readJson(ROSTER_FILE, []);
     return sendJson(res, 200, { players: withDuplicates(Array.isArray(stored) ? stored : []) });
   }
+  if (req.method === "GET" && pathname === "/api/admin/roster/photo") {
+    const query = new URL(req.url, "http://127.0.0.1").searchParams;
+    const id = cleanText(query.get("id"), 40);
+    const file = cleanText(query.get("file"), 24);
+    const dir = playerPhotoDir(id);
+    if (!dir || !PHOTO_NAME.test(file)) return sendJson(res, 404, { error: "No encontrada." });
+    const full = path.join(dir, file);
+    if (!fs.existsSync(full) || !fs.statSync(full).isFile()) return sendJson(res, 404, { error: "No encontrada." });
+    const kind = path.extname(file).slice(1);
+    const type = kind === "png" ? "image/png" : kind === "webp" ? "image/webp" : "image/jpeg";
+    const bytes = fs.readFileSync(full);
+    res.writeHead(200, baseHeaders({
+      "Content-Type": type,
+      "Content-Length": bytes.length,
+      "X-Robots-Tag": "noindex, nofollow"
+    }));
+    return res.end(bytes);
+  }
+  if (req.method === "POST" && pathname === "/api/admin/roster/photo") {
+    const body = await readBody(req, 5000000);
+    const id = cleanText(body.id, 40);
+    const dir = playerPhotoDir(id);
+    const roster = readJson(ROSTER_FILE, []);
+    const known = Array.isArray(roster) && roster.some(function (item) { return item && item.id === id; });
+    if (!dir || !known) return sendJson(res, 404, { error: "No se encontró la jugadora." });
+    const stored = fs.existsSync(dir) ? fs.readdirSync(dir).filter(function (name) { return PHOTO_NAME.test(name); }) : [];
+    if (stored.length >= 5) return sendJson(res, 400, { error: "La jugadora ya tiene 5 fotos." });
+    const raw = String(body.data || "").replace(/\s/g, "");
+    const base64 = raw.indexOf(",") >= 0 ? raw.split(",").pop() : raw;
+    if (!/^[A-Za-z0-9+/=]+$/.test(base64)) return sendJson(res, 400, { error: "La foto no se pudo leer." });
+    const buffer = Buffer.from(base64, "base64");
+    if (buffer.length < 32 || buffer.length > 2500000) return sendJson(res, 400, { error: "La foto debe pesar menos de 2.5 MB." });
+    const kind = imageKind(buffer);
+    if (!kind) return sendJson(res, 400, { error: "La foto debe ser JPG, PNG o WebP." });
+    const filename = crypto.randomBytes(8).toString("hex") + "." + kind;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, filename), buffer);
+    return sendJson(res, 200, { file: filename });
+  }
   if (req.method === "PUT" && pathname === "/api/admin/roster") {
-    const body = await readBody(req);
+    const body = await readBody(req, 1000000);
     const players = validRoster(body.players);
     if (!players) return sendJson(res, 400, { error: "Revisa los datos de la jugadora." });
     writeJson(ROSTER_FILE, players);
+    syncRosterPhotos(players);
     return sendJson(res, 200, { players: withDuplicates(players) });
   }
   if (req.method === "POST" && pathname === "/api/admin/roster/import") {
     const body = await readBody(req, 4000000);
-    const raw = String(body.file || "").replace(/\s/g, "");
-    if (!/^[A-Za-z0-9+/=]+$/.test(raw) || raw.length < 20) return sendJson(res, 400, { error: "El archivo no se pudo leer." });
-    const buffer = Buffer.from(raw, "base64");
-    if (buffer.length < 4 || buffer.length > 2500000 || buffer.readUInt32LE(0) !== 0x04034b50) {
-      return sendJson(res, 400, { error: "El archivo no se pudo leer." });
-    }
-    let rows;
-    try {
-      rows = rowsFromWorkbook(buffer);
-    } catch (error) {
-      const message = error && error.message === "columns"
-        ? "El archivo no tiene las columnas de la plantilla."
-        : "El archivo no se pudo leer.";
-      return sendJson(res, 400, { error: message });
-    }
-    if (!rows.length) return sendJson(res, 400, { error: "El archivo no tiene jugadoras." });
-    const incoming = validRoster(rows.map(function (row) {
-      return Object.assign({ id: "r-" + crypto.randomBytes(6).toString("hex") }, row);
-    }));
-    if (!incoming) return sendJson(res, 400, { error: "Revisa los datos del archivo." });
+    const parsed = parsedImport(body);
+    if (parsed.error) return sendJson(res, 400, { error: parsed.error });
     const current = readJson(ROSTER_FILE, []);
-    const players = validRoster((Array.isArray(current) ? current : []).concat(incoming));
+    const stored = Array.isArray(current) ? current : [];
+    const players = validRoster(stored.concat(parsed.incoming));
     if (!players) return sendJson(res, 400, { error: "La lista superó el límite de jugadoras." });
+    if (body.preview === true) {
+      return sendJson(res, 200, {
+        preview: true,
+        total: parsed.incoming.length,
+        duplicates: importDuplicates(stored, parsed.incoming)
+      });
+    }
     writeJson(ROSTER_FILE, players);
-    return sendJson(res, 200, { players: withDuplicates(players), added: incoming.length });
+    return sendJson(res, 200, { players: withDuplicates(players), added: parsed.incoming.length });
   }
   if (req.method === "GET" && pathname === "/api/admin/players") return sendJson(res, 200, { players: readJson(PLAYERS_FILE, []) });
   if (req.method === "PUT" && pathname === "/api/admin/players") {
