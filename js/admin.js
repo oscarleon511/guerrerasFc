@@ -9,6 +9,7 @@
   var eventUploadBusy = false;
   var eventPreviewIndex = 0;
   var previewingSaved = "";
+  var previewDismissed = false;
   var eventNoteLimit = 10000;
   var editingPlayer = "";
   var rosterOpen = false;
@@ -256,6 +257,9 @@
           id: editingEvent,
           photos: (current.photos || []).slice(),
           video: current.video || "",
+          mediaMode: current.mediaMode === "video" || current.mediaMode === "photos" ? current.mediaMode : "both",
+          mediaOrder: (current.mediaOrder || []).slice(),
+          videoFrame: copyVideoFrame(current.videoFrame),
           published: current.published === true,
           fresh: false
         };
@@ -263,9 +267,66 @@
       return eventUploads;
     }
     if (!eventUploads || !eventUploads.fresh) {
-      eventUploads = { id: "e-" + Date.now().toString(36), photos: [], video: "", published: false, fresh: true };
+      eventUploads = { id: "e-" + Date.now().toString(36), photos: [], video: "", mediaMode: "both", mediaOrder: [], videoFrame: copyVideoFrame(), published: false, fresh: true };
     }
     return eventUploads;
+  }
+
+  function copyVideoFrame(frame) {
+    var source = frame || {};
+    var ratio = eventPhotoRatios[source.ratio] ? source.ratio : "site";
+    var zoom = Number(source.zoom);
+    if (!isFinite(zoom)) zoom = 1;
+    zoom = Math.min(3, Math.max(1, zoom));
+    var x = Number(source.x);
+    var y = Number(source.y);
+    if (!isFinite(x)) x = 0;
+    if (!isFinite(y)) y = 0;
+    return {
+      ratio: ratio,
+      zoom: Math.round(zoom * 100) / 100,
+      x: Math.min(80, Math.max(-80, Math.round(x * 10) / 10)),
+      y: Math.min(80, Math.max(-80, Math.round(y * 10) / 10))
+    };
+  }
+
+  function eventMediaOrder(record) {
+    var photos = (record && record.photos) || [];
+    var video = record && record.video;
+    var order = [];
+    ((record && record.mediaOrder) || []).forEach(function (token) {
+      if (token === "video") {
+        if (video && order.indexOf("video") === -1) order.push("video");
+      } else if (photos.indexOf(token) !== -1 && order.indexOf(token) === -1) order.push(token);
+    });
+    if (video && order.indexOf("video") === -1) order.unshift("video");
+    photos.forEach(function (file) {
+      if (order.indexOf(file) === -1) order.push(file);
+    });
+    return order;
+  }
+
+  function eventSlides(record) {
+    if (!record) return [];
+    var mode = record.mediaMode || "both";
+    if (!record.video) mode = "photos";
+    else if (!record.photos || !record.photos.length) mode = "video";
+    var slides = [];
+    eventMediaOrder(record).forEach(function (token) {
+      if (token === "video") {
+        if (mode !== "photos") slides.push({ kind: "video", file: record.video });
+      } else if (mode !== "video") slides.push({ kind: "photo", file: token });
+    });
+    return slides;
+  }
+
+  function frameAspect(ratio) {
+    return { site: "16 / 10", instagram: "1 / 1", portrait: "4 / 5", story: "9 / 16", facebook: "1200 / 630" }[ratio] || "16 / 10";
+  }
+
+  function frameStyle(frame) {
+    var fitted = copyVideoFrame(frame);
+    return "--frame:" + frameAspect(fitted.ratio) + ";--zoom:" + fitted.zoom + ";--pan-x:" + fitted.x + "%;--pan-y:" + fitted.y + "%";
   }
 
   function eventMediaUrl(file, id) {
@@ -292,6 +353,24 @@
     return "<video controls preload=\"metadata\" src=\"" + escapeHtml(eventMediaUrl(draft.video)) + "\"></video><button type=\"button\" data-remove-event-video>Quitar video</button>";
   }
 
+  function eventShowOptions(draft) {
+    if (!draft || !draft.video) return "";
+    var mode = draft.mediaMode || "both";
+    var choices = [["both", "Video y fotos"], ["video", "Solo el video"], ["photos", "Solo las fotos"]];
+    var radios = choices.map(function (choice) {
+      return "<label class=\"media-choice\"><input type=\"radio\" name=\"event-media-mode\" value=\"" + choice[0] + "\"" + (mode === choice[0] ? " checked" : "") + "><span>" + choice[1] + "</span></label>";
+    }).join("");
+    var mixed = eventSlides({ photos: draft.photos, video: draft.video, mediaMode: "both", mediaOrder: draft.mediaOrder });
+    var order = "";
+    if (mode === "both" && mixed.length > 1) {
+      order = "<p class=\"field-hint\">El video queda primero. Sube o baja cada pieza para cambiar el orden del carrusel.</p><ol class=\"media-order\">" + mixed.map(function (slide, index) {
+        var label = slide.kind === "video" ? "Video" : "Foto " + (draft.photos.indexOf(slide.file) + 1);
+        return "<li><span>" + label + "</span><span class=\"media-order-actions\"><button type=\"button\" data-media-move=\"-1\" data-media-index=\"" + index + "\"" + (index === 0 ? " disabled" : "") + " aria-label=\"Subir " + label + "\">↑</button><button type=\"button\" data-media-move=\"1\" data-media-index=\"" + index + "\"" + (index === mixed.length - 1 ? " disabled" : "") + " aria-label=\"Bajar " + label + "\">↓</button></span></li>";
+      }).join("") + "</ol>";
+    }
+    return "<div class=\"event-show-options\"><span class=\"field-label\">Qué se muestra en el sitio</span><div class=\"media-choices\">" + radios + "</div>" + order + "<p class=\"event-video-adjust\"><button type=\"button\" class=\"btn btn-ghost\" id=\"adjust-event-video\">Ajustar video</button></p></div>";
+  }
+
   function paintEventMedia() {
     var draft = eventUploads;
     var list = document.getElementById("event-photo-list");
@@ -310,6 +389,8 @@
     if (preview) preview.innerHTML = eventVideoBlock(draft);
     if (videoLead) videoLead.textContent = draft.video ? "Suelta otro video para reemplazarlo." : "Suelta el video aquí o elige un archivo.";
     if (videoAdd) videoAdd.textContent = draft.video ? "Cambiar video" : "Elegir video";
+    var options = document.getElementById("event-show-options");
+    if (options) options.innerHTML = eventShowOptions(draft);
     paintEventPreview();
   }
 
@@ -348,6 +429,35 @@
     if (!eventUploadsNeedCleanup(draft)) return Promise.resolve();
     return api("/api/admin/events", "PUT", { events: events }).then(function (result) {
       if (result.ok && result.data && result.data.events) events = result.data.events;
+    });
+  }
+
+  function saveEventRecord() {
+    return api("/api/admin/events", "PUT", { events: events }).then(function (result) {
+      if (!result.ok) throw new Error((result.data && result.data.error) || "No se pudieron guardar las fotos.");
+      events = result.data.events;
+    });
+  }
+
+  function saveDraftMedia() {
+    var draft = eventUploads;
+    var saved = draft ? eventById(draft.id) : null;
+    if (!saved) return Promise.resolve(false);
+    saved.photos = draft.photos.slice();
+    saved.video = draft.video || "";
+    saved.mediaMode = draft.mediaMode || "both";
+    saved.mediaOrder = eventMediaOrder(draft);
+    saved.videoFrame = copyVideoFrame(draft.videoFrame);
+    return saveEventRecord().then(function () {
+      var fresh = eventById(draft.id);
+      if (fresh && eventUploads && eventUploads.id === draft.id) {
+        eventUploads.photos = fresh.photos.slice();
+        eventUploads.video = fresh.video || "";
+        eventUploads.mediaMode = fresh.mediaMode || "both";
+        eventUploads.mediaOrder = (fresh.mediaOrder || []).slice();
+        eventUploads.videoFrame = copyVideoFrame(fresh.videoFrame);
+      }
+      return true;
     });
   }
 
@@ -476,9 +586,9 @@
   function previewPhotoTarget() {
     if (previewingSaved) {
       var saved = eventById(previewingSaved);
-      if (saved) return { id: saved.id, photos: saved.photos || [], source: "preview" };
+      if (saved) return { id: saved.id, photos: saved.photos || [], record: saved, source: "preview" };
     }
-    return { id: eventUploads && eventUploads.id, photos: (eventUploads && eventUploads.photos) || [], source: "draft" };
+    return { id: eventUploads && eventUploads.id, photos: (eventUploads && eventUploads.photos) || [], record: eventUploads, source: "draft" };
   }
 
   function showEventPhotoEditor(image, file) {
@@ -548,29 +658,16 @@
       var previousPhotos = saved && saved.photos ? saved.photos.slice() : null;
       var previousVideo = saved ? (saved.video || "") : "";
       if (draft && draft.photos[index] !== undefined) draft.photos[index] = filename;
-      if (saved && saved.photos && saved.photos[index] !== undefined) {
-        if (draft) saved.photos = draft.photos.slice();
-        else saved.photos[index] = filename;
-        if (draft && draft.video) saved.video = draft.video;
-        return api("/api/admin/events", "PUT", { events: events }).then(function (result) {
-          if (!result.ok) {
-            if (draft && draft.photos[index] !== undefined) draft.photos[index] = previous;
-            if (previousPhotos) saved.photos = previousPhotos;
-            saved.video = previousVideo;
-            return releaseEventFile(eventId, filename).then(function () {
-              throw new Error((result.data && result.data.error) || "No se pudo guardar la foto.");
-            });
-          }
-          events = result.data.events;
-          var fresh = eventById(eventId);
-          if (draft && fresh) {
-            draft.photos = fresh.photos.slice();
-            draft.video = fresh.video || "";
-          }
-          return filename;
-        });
-      }
-      return releaseEventFile(eventId, previous).then(function () { return filename; });
+      else if (saved && saved.photos && saved.photos[index] !== undefined) saved.photos[index] = filename;
+      var persist = saved ? (draft ? saveDraftMedia() : saveEventRecord()) : Promise.resolve(false);
+      return persist.then(function () {
+        return releaseEventFile(eventId, previous).then(function () { return filename; });
+      }).catch(function (error) {
+        if (draft && draft.photos[index] === filename) draft.photos[index] = previous;
+        if (previousPhotos && saved) saved.photos = previousPhotos;
+        if (saved) saved.video = previousVideo;
+        return releaseEventFile(eventId, filename).then(function () { throw error; });
+      });
     }).then(function () {
       closeEventPhotoEditor();
       var media = document.getElementById("event-preview-media");
@@ -617,9 +714,15 @@
         });
       });
     }, Promise.resolve()).then(function () {
-      if (eventUploads && eventUploads.id === eventId && !rejected.length) {
-        eventMediaStatus("event-photo-status", "Fotos guardadas. Se publican al guardar el evento si el interruptor está encendido.");
-      }
+      if (!eventUploads || eventUploads.id !== eventId) return;
+      return saveDraftMedia().then(function (savedNow) {
+        if (rejected.length) return;
+        var saved = eventById(eventId);
+        if (!savedNow) eventMediaStatus("event-photo-status", "Fotos guardadas. Se publican al guardar el evento.");
+        else if (saved && saved.published && eventUploads.photos.length > 1) eventMediaStatus("event-photo-status", "Fotos guardadas. El sitio las muestra en un carrusel.");
+        else if (saved && saved.published) eventMediaStatus("event-photo-status", "Foto guardada. Ya se ve en el sitio.");
+        else eventMediaStatus("event-photo-status", "Fotos guardadas. Enciende En el sitio para mostrarlas.");
+      });
     }).catch(function (error) {
       eventMediaStatus("event-photo-status", error.message || "La foto no se pudo leer.");
     }).then(function () {
@@ -670,9 +773,13 @@
     }).then(function (filename) {
       if (!eventUploads || eventUploads.id !== eventId) return releaseEventFile(eventId, filename);
       eventUploads.video = filename;
+      if (eventUploads.mediaOrder.indexOf("video") === -1) eventUploads.mediaOrder.unshift("video");
+      if (!eventUploads.mediaMode) eventUploads.mediaMode = "both";
       paintEventMedia();
-      eventMediaStatus("event-video-status", "Video guardado.");
-      if (previous && previous !== filename) return releaseEventFile(eventId, previous);
+      var releasePrevious = previous && previous !== filename ? releaseEventFile(eventId, previous) : Promise.resolve();
+      return releasePrevious.then(function () { return saveDraftMedia(); }).then(function () {
+        eventMediaStatus("event-video-status", "Video guardado. Elige qué se muestra en el sitio.");
+      });
     }).catch(function (error) {
       eventMediaStatus("event-video-status", error.message || "El video no se pudo guardar.");
     }).then(function () {
@@ -691,8 +798,8 @@
       "<label class=\"field\">Hora<input name=\"time\" type=\"time\" value=\"" + escapeHtml(current.time || "") + "\"></label>",
       "<label class=\"field wide\">Lugar<input name=\"place\" maxlength=\"120\" value=\"" + escapeHtml(current.place || "") + "\"></label>",
       "<div class=\"wide notes-editor\"><span class=\"field-label\">Nota</span><div class=\"notes-tools\"><button type=\"button\" data-event-note-cmd=\"bold\">Negrita</button><button type=\"button\" data-event-note-cmd=\"italic\">Cursiva</button><button type=\"button\" data-event-note-cmd=\"underline\">Subrayado</button><button type=\"button\" data-event-note-cmd=\"insertUnorderedList\">Lista</button></div><div id=\"event-note-input\" class=\"notes-input\" contenteditable=\"true\" role=\"textbox\" aria-multiline=\"true\" aria-label=\"Nota\"></div><p id=\"event-note-count\" class=\"notes-count\" aria-live=\"polite\">0 / 10000</p></div>",
-      "<div class=\"wide\"><span class=\"field-label\">Fotos</span><div id=\"event-photo-drop\" class=\"photo-drop" + (full ? " is-full" : "") + "\"><p id=\"event-photo-lead\">" + (full ? "Ya hay 5 fotos. Quita una para agregar otra." : "Suelta las fotos aquí o elige archivos.") + "</p><p class=\"field-hint\">Hasta 5 fotos, en JPG, PNG o WebP. Haz clic en una foto para recortarla al formato del sitio o de una red social.</p><button class=\"btn btn-ghost\" type=\"button\" id=\"event-photo-add\"" + (full ? " disabled" : "") + ">Elegir fotos</button><input id=\"event-photo-file\" type=\"file\" accept=\"image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp\" multiple hidden></div><div id=\"event-photo-list\" class=\"photo-list\">" + eventPhotoFigures(draft) + "</div><p id=\"event-photo-status\" class=\"photo-status\" role=\"status\"></p></div>",
-      "<div class=\"wide\"><span class=\"field-label\">Video</span><div id=\"event-video-drop\" class=\"photo-drop\"><p id=\"event-video-lead\">" + (draft.video ? "Suelta otro video para reemplazarlo." : "Suelta el video aquí o elige un archivo.") + "</p><p class=\"field-hint\">Un solo video, en MP4 o WebM, de hasta 30 MB.</p><button class=\"btn btn-ghost\" type=\"button\" id=\"event-video-add\">" + (draft.video ? "Cambiar video" : "Elegir video") + "</button><input id=\"event-video-file\" type=\"file\" accept=\"video/mp4,video/webm,.mp4,.webm\" hidden></div><div id=\"event-video-preview\" class=\"event-video-preview\">" + eventVideoBlock(draft) + "</div><p id=\"event-video-status\" class=\"photo-status\" role=\"status\"></p></div>",
+      "<div class=\"wide\"><span class=\"field-label\">Fotos</span><div id=\"event-photo-drop\" class=\"photo-drop" + (full ? " is-full" : "") + "\"><p id=\"event-photo-lead\">" + (full ? "Ya hay 5 fotos. Quita una para agregar otra." : "Suelta las fotos aquí o elige archivos.") + "</p><p class=\"field-hint\">Hasta 5 fotos, en JPG, PNG o WebP. Si hay más de una, la página Eventos las muestra en un carrusel. Haz clic en una foto para recortarla.</p><button class=\"btn btn-ghost\" type=\"button\" id=\"event-photo-add\"" + (full ? " disabled" : "") + ">Elegir fotos</button><input id=\"event-photo-file\" type=\"file\" accept=\"image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp\" multiple hidden></div><div id=\"event-photo-list\" class=\"photo-list\">" + eventPhotoFigures(draft) + "</div><p id=\"event-photo-status\" class=\"photo-status\" role=\"status\"></p></div>",
+      "<div class=\"wide\"><span class=\"field-label\">Video</span><div id=\"event-video-drop\" class=\"photo-drop\"><p id=\"event-video-lead\">" + (draft.video ? "Suelta otro video para reemplazarlo." : "Suelta el video aquí o elige un archivo.") + "</p><p class=\"field-hint\">Un solo video, en MP4 o WebM, de hasta 30 MB. Puedes encuadrarlo al formato del sitio o de una red social.</p><button class=\"btn btn-ghost\" type=\"button\" id=\"event-video-add\">" + (draft.video ? "Cambiar video" : "Elegir video") + "</button><input id=\"event-video-file\" type=\"file\" accept=\"video/mp4,video/webm,.mp4,.webm\" hidden></div><div id=\"event-video-preview\" class=\"event-video-preview\">" + eventVideoBlock(draft) + "</div><div id=\"event-show-options\">" + eventShowOptions(draft) + "</div><p id=\"event-video-status\" class=\"photo-status\" role=\"status\"></p></div>",
       "<div class=\"wide admin-actions\"><button class=\"btn\" type=\"submit\">" + (editingEvent ? "Guardar evento" : "Agregar evento") + "</button>" + (editingEvent ? "<button class=\"btn btn-ghost\" type=\"button\" id=\"cancel-event\">Cancelar</button>" : "") + "</div>",
       "</form>"
     ].join("");
@@ -707,11 +814,11 @@
       if (count) flags.push(count + (count === 1 ? " foto" : " fotos"));
       if (item.video) flags.push("Video");
       var flagHtml = flags.length ? "<p class=\"record-flags\">" + flags.map(function (flag) { return "<span class=\"record-flag\">" + escapeHtml(flag) + "</span>"; }).join("") + "</p>" : "";
-      return "<article class=\"record" + (previewingSaved === item.id ? " is-previewing" : "") + "\"><div><strong>" + escapeHtml(item.name) + "</strong><p>" + escapeHtml(when) + (item.place ? " · " + escapeHtml(item.place) : "") + "</p>" + flagHtml + "</div><div class=\"record-actions\"><label class=\"switch\"><input type=\"checkbox\" data-publish-event=\"" + escapeHtml(item.id) + "\"" + (item.published ? " checked" : "") + "><span class=\"switch-track\" aria-hidden=\"true\"></span><span>En el sitio</span></label><button class=\"btn btn-ghost\" type=\"button\" data-preview-event=\"" + escapeHtml(item.id) + "\">Vista previa</button><button class=\"btn btn-ghost\" type=\"button\" data-edit-event=\"" + escapeHtml(item.id) + "\">Editar</button><button class=\"btn btn-ghost\" type=\"button\" data-delete-event=\"" + escapeHtml(item.id) + "\">Quitar</button></div></article>";
+      return "<article class=\"record" + (previewingSaved === item.id ? " is-previewing" : "") + "\"><div><strong>" + escapeHtml(item.name) + "</strong><p>" + escapeHtml(when) + (item.place ? " · " + escapeHtml(item.place) : "") + "</p>" + flagHtml + "</div><div class=\"record-actions\"><label class=\"switch\"><input type=\"checkbox\" data-publish-event=\"" + escapeHtml(item.id) + "\"" + (item.published ? " checked" : "") + "><span class=\"switch-track\" aria-hidden=\"true\"></span><span>En el sitio</span></label><button class=\"btn btn-ghost\" type=\"button\" data-preview-event=\"" + escapeHtml(item.id) + "\">" + (previewingSaved === item.id ? "Cerrar vista" : "Vista previa") + "</button><button class=\"btn btn-ghost\" type=\"button\" data-edit-event=\"" + escapeHtml(item.id) + "\">Editar</button><button class=\"btn btn-ghost\" type=\"button\" data-delete-event=\"" + escapeHtml(item.id) + "\">Quitar</button></div></article>";
     }).join("") : "<p>No hay eventos.</p>";
     var pageOn = settings && settings.pages && settings.pages.eventos && settings.pages.eventos.visible !== false;
     var pageSwitch = "<article class=\"panel-card\"><p>Muestra u oculta la pestaña Eventos en el menú del sitio. Si está apagada, la página tampoco se abre.</p><label class=\"switch\"><input type=\"checkbox\" data-visible=\"eventos\"" + (pageOn ? " checked" : "") + "><span class=\"switch-track\" aria-hidden=\"true\"></span><span>Visible en el menú y en la página</span></label></article>";
-    return pageSwitch + "<article class=\"panel-card events-panel\"><p>Los eventos con el interruptor encendido se ven en la página Eventos del sitio. Desde ahí se pueden compartir.</p><div class=\"event-workspace\"><div class=\"event-form-column\">" + eventForm() + "</div><aside class=\"event-preview-column\"><p class=\"field-label\">Vista previa</p><article class=\"event-preview-card\"><p id=\"event-preview-state\" class=\"field-hint\" hidden></p><h2 id=\"event-preview-title\">Nombre del evento</h2><p id=\"event-preview-when\">Fecha y hora</p><p id=\"event-preview-place\" hidden></p><div id=\"event-preview-media\"></div><p class=\"event-preview-adjust\"><button type=\"button\" class=\"btn btn-ghost\" id=\"event-preview-adjust\" hidden>Ajustar foto</button></p><div id=\"event-preview-note\" class=\"event-preview-note\" hidden></div><p class=\"event-preview-share\"><button type=\"button\" class=\"btn\" disabled>Compartir</button></p></article></aside></div><div class=\"record-list\">" + list + "</div></article>";
+    return pageSwitch + "<article class=\"panel-card events-panel\"><p>Los eventos con el interruptor encendido se ven en la página Eventos del sitio. Desde ahí se pueden compartir.</p><div class=\"event-workspace\"><div class=\"event-form-column\">" + eventForm() + "</div><aside class=\"event-preview-column\"><p class=\"field-label preview-heading\"><span>Vista previa</span><button type=\"button\" class=\"btn btn-ghost\" id=\"close-event-preview\"" + (previewingSaved ? "" : " hidden") + ">Cerrar</button></p><article class=\"event-preview-card\"><p id=\"event-preview-empty\" class=\"event-preview-empty\" hidden>Nada que previsualizar.</p><p id=\"event-preview-state\" class=\"field-hint\" hidden></p><h2 id=\"event-preview-title\">Nombre del evento</h2><p id=\"event-preview-when\">Fecha y hora</p><p id=\"event-preview-place\" hidden></p><div id=\"event-preview-media\"></div><p class=\"event-preview-adjust\"><button type=\"button\" class=\"btn btn-ghost\" id=\"event-preview-adjust\" hidden>Ajustar foto</button></p><div id=\"event-preview-note\" class=\"event-preview-note\" hidden></div><p class=\"event-preview-share\"><button type=\"button\" class=\"btn\" disabled>Compartir</button></p></article></aside></div><div class=\"record-list\">" + list + "</div></article>";
   }
 
   function eventNoteValue() {
@@ -722,8 +829,22 @@
   }
 
   function showFormPreview() {
+    previewDismissed = false;
     previewingSaved = "";
     document.querySelectorAll(".record.is-previewing").forEach(function (row) { row.classList.remove("is-previewing"); });
+    document.querySelectorAll("[data-preview-event]").forEach(function (button) { button.textContent = "Vista previa"; });
+    var closePreview = document.getElementById("close-event-preview");
+    if (closePreview) closePreview.hidden = true;
+    paintEventPreview();
+  }
+
+  function closeEventPreview() {
+    previewingSaved = "";
+    previewDismissed = true;
+    document.querySelectorAll(".record.is-previewing").forEach(function (row) { row.classList.remove("is-previewing"); });
+    document.querySelectorAll("[data-preview-event]").forEach(function (button) { button.textContent = "Vista previa"; });
+    var closePreview = document.getElementById("close-event-preview");
+    if (closePreview) closePreview.hidden = true;
     paintEventPreview();
   }
 
@@ -736,14 +857,25 @@
     var state = document.getElementById("event-preview-state");
     var form = document.getElementById("event-form");
     if (!title || !form || !media) return;
+    var card = title.closest(".event-preview-card");
+    var emptyNode = document.getElementById("event-preview-empty");
+    if (previewDismissed && !previewingSaved) {
+      if (card) card.classList.add("is-empty");
+      if (emptyNode) emptyNode.hidden = false;
+      media.removeAttribute("data-media");
+      return;
+    }
+    if (card) card.classList.remove("is-empty");
+    if (emptyNode) emptyNode.hidden = true;
     var saved = previewingSaved ? eventById(previewingSaved) : null;
     var name = saved ? String(saved.name || "").trim() : String((form.querySelector("[name=name]") || {}).value || "").trim();
     var date = saved ? String(saved.date || "") : String((form.querySelector("[name=date]") || {}).value || "");
     var time = saved ? String(saved.time || "") : String((form.querySelector("[name=time]") || {}).value || "");
     var place = saved ? String(saved.place || "").trim() : String((form.querySelector("[name=place]") || {}).value || "").trim();
     var note = saved ? sanitizeNotes(saved.note || "") : eventNoteValue();
-    var photos = saved ? (saved.photos || []) : ((eventUploads && eventUploads.photos) || []);
-    var video = saved ? (saved.video || "") : ((eventUploads && eventUploads.video) || "");
+    var source = saved || eventUploads || { photos: [], video: "", mediaMode: "both", mediaOrder: [], videoFrame: copyVideoFrame() };
+    var slides = eventSlides(source);
+    var frame = copyVideoFrame(source.videoFrame);
     var mediaId = saved ? saved.id : (eventUploads && eventUploads.id);
     if (state) {
       state.hidden = !saved;
@@ -769,22 +901,33 @@
     noteNode.hidden = !note;
     noteNode.innerHTML = note;
     var adjust = document.getElementById("event-preview-adjust");
-    if (adjust) adjust.hidden = !photos.length;
-    var signature = (mediaId || "form") + "|" + photos.join(",") + "|" + video;
+    var currentSlide = slides[eventPreviewIndex] || slides[0] || null;
+    if (adjust) {
+      adjust.hidden = !currentSlide;
+      adjust.textContent = currentSlide && currentSlide.kind === "video" ? "Ajustar video" : "Ajustar foto";
+    }
+    var signature = (mediaId || "form") + "|" + slides.map(function (slide) { return slide.kind + ":" + slide.file; }).join(",") + "|" + (source.mediaMode || "both") + "|" + frame.ratio + "|" + frame.zoom + "|" + frame.x + "|" + frame.y + "|" + eventPreviewIndex;
     if (media.getAttribute("data-media") === signature) return;
     media.setAttribute("data-media", signature);
-    if (eventPreviewIndex >= photos.length) eventPreviewIndex = 0;
+    if (eventPreviewIndex >= slides.length) eventPreviewIndex = 0;
+    currentSlide = slides[eventPreviewIndex] || null;
+    function previewPiece(slide, index) {
+      var on = index === eventPreviewIndex;
+      if (slide.kind === "video") return "<div class=\"event-video-fit" + (on ? " is-on" : "") + "\" style=\"" + frameStyle(frame) + "\"><video controls preload=\"metadata\" src=\"" + escapeHtml(eventMediaUrl(slide.file, mediaId)) + "\"></video></div>";
+      return "<img data-preview-photo src=\"" + escapeHtml(eventMediaUrl(slide.file, mediaId)) + "\" alt=\"Foto del evento. Pulsa para recortarla.\"" + (on ? " class=\"is-on\"" : "") + ">";
+    }
     var html = "";
-    if (photos.length === 1) {
-      html = "<img class=\"event-preview-photo\" data-preview-photo src=\"" + escapeHtml(eventMediaUrl(photos[0], mediaId)) + "\" alt=\"Foto del evento. Pulsa para recortarla.\">";
-    } else if (photos.length > 1) {
-      html = "<div class=\"event-preview-carousel\"><div class=\"event-preview-slides\">" + photos.map(function (file, index) {
-        return "<img data-preview-photo src=\"" + escapeHtml(eventMediaUrl(file, mediaId)) + "\" alt=\"Foto " + (index + 1) + " del evento. Pulsa para recortarla.\"" + (index === eventPreviewIndex ? " class=\"is-on\"" : "") + ">";
-      }).join("") + "</div><button type=\"button\" class=\"event-preview-nav\" data-preview-step=\"-1\" aria-label=\"Foto anterior\">‹</button><button type=\"button\" class=\"event-preview-nav is-next\" data-preview-step=\"1\" aria-label=\"Foto siguiente\">›</button><div class=\"event-preview-dots\">" + photos.map(function (file, index) {
-        return "<button type=\"button\" data-preview-dot=\"" + index + "\" aria-label=\"Foto " + (index + 1) + "\"" + (index === eventPreviewIndex ? " class=\"is-on\" aria-current=\"true\"" : "") + "></button>";
+    if (slides.length === 1 && slides[0].kind === "photo") html = "<img class=\"event-preview-photo\" data-preview-photo src=\"" + escapeHtml(eventMediaUrl(slides[0].file, mediaId)) + "\" alt=\"Foto del evento. Pulsa para recortarla.\">";
+    else if (slides.length === 1) html = previewPiece(slides[0], 0);
+    else if (slides.length > 1) {
+      var aspect = currentSlide && currentSlide.kind === "video" ? frameAspect(frame.ratio) : "16 / 10";
+      html = "<div class=\"event-preview-carousel\"><div class=\"event-preview-slides\" style=\"aspect-ratio:" + aspect + "\">" + slides.map(previewPiece).join("") + "</div><button type=\"button\" class=\"event-preview-nav\" data-preview-step=\"-1\" aria-label=\"Anterior\">‹</button><button type=\"button\" class=\"event-preview-nav is-next\" data-preview-step=\"1\" aria-label=\"Siguiente\">›</button><div class=\"event-preview-dots\">" + slides.map(function (slide, index) {
+        var photoCount = 0;
+        slides.slice(0, index + 1).forEach(function (item) { if (item.kind === "photo") photoCount += 1; });
+        var label = slide.kind === "video" ? "Video" : "Foto " + photoCount;
+        return "<button type=\"button\" data-preview-dot=\"" + index + "\" aria-label=\"" + label + "\"" + (index === eventPreviewIndex ? " class=\"is-on\" aria-current=\"true\"" : "") + "></button>";
       }).join("") + "</div></div>";
     }
-    if (video) html += "<video class=\"event-preview-video\" controls preload=\"metadata\" src=\"" + escapeHtml(eventMediaUrl(video, mediaId)) + "\"></video>";
     media.innerHTML = html;
   }
 
@@ -796,7 +939,17 @@
     var form = document.getElementById("event-form");
     if (form) {
       form.addEventListener("input", showFormPreview);
-      form.addEventListener("change", showFormPreview);
+      form.addEventListener("change", function (event) {
+        if (event.target.name === "event-media-mode" && eventUploads) {
+          eventUploads.mediaMode = event.target.value;
+          var box = document.getElementById("event-preview-media");
+          if (box) box.removeAttribute("data-media");
+          paintEventMedia();
+          saveDraftMedia().catch(function () {});
+          return;
+        }
+        showFormPreview();
+      });
     }
     paintEventPreview();
   }
@@ -1612,26 +1765,64 @@
     }
     if (event.target.closest("[data-preview-photo], #event-preview-adjust")) {
       var shown = previewPhotoTarget();
-      openEventPhotoEditor(shown.id, eventPreviewIndex, shown.source === "preview" ? "preview" : "draft");
+      var shownSlides = eventSlides(shown.record);
+      var shownSlide = shownSlides[eventPreviewIndex] || shownSlides[0];
+      if (shownSlide && shownSlide.kind === "video") openEventVideoEditor(shown.record);
+      else if (shownSlide) openEventPhotoEditor(shown.id, shown.photos.indexOf(shownSlide.file), shown.source === "preview" ? "preview" : "draft");
+      return;
+    }
+    if (event.target.closest("#adjust-event-video") && eventUploads) {
+      openEventVideoEditor(eventUploads);
+      return;
+    }
+    var mediaMove = event.target.closest("[data-media-move]");
+    if (mediaMove && eventUploads) {
+      var moving = eventMediaOrder(eventUploads);
+      var fromIndex = Number(mediaMove.getAttribute("data-media-index"));
+      var toIndex = fromIndex + Number(mediaMove.getAttribute("data-media-move"));
+      if (toIndex < 0 || toIndex >= moving.length) return;
+      var moved = moving[fromIndex];
+      moving.splice(fromIndex, 1);
+      moving.splice(toIndex, 0, moved);
+      eventUploads.mediaOrder = moving;
+      eventUploads.photos = moving.filter(function (token) { return token !== "video"; });
+      var movedMedia = document.getElementById("event-preview-media");
+      if (movedMedia) movedMedia.removeAttribute("data-media");
+      paintEventMedia();
+      saveDraftMedia().catch(function () {});
       return;
     }
     var savedPreview = event.target.closest("[data-preview-event]");
     if (savedPreview) {
-      previewingSaved = savedPreview.getAttribute("data-preview-event");
+      var previewId = savedPreview.getAttribute("data-preview-event");
+      if (previewingSaved === previewId) {
+        closeEventPreview();
+        return;
+      }
+      previewDismissed = false;
+      previewingSaved = previewId;
       eventPreviewIndex = 0;
       var savedMedia = document.getElementById("event-preview-media");
       if (savedMedia) savedMedia.removeAttribute("data-media");
+      document.querySelectorAll("[data-preview-event]").forEach(function (button) { button.textContent = "Vista previa"; });
       document.querySelectorAll(".record.is-previewing").forEach(function (row) { row.classList.remove("is-previewing"); });
       var savedRow = savedPreview.closest(".record");
       if (savedRow) savedRow.classList.add("is-previewing");
+      savedPreview.textContent = "Cerrar vista";
+      var closePreview = document.getElementById("close-event-preview");
+      if (closePreview) closePreview.hidden = false;
       paintEventPreview();
       var previewColumn = document.querySelector(".event-preview-column");
       if (previewColumn) previewColumn.scrollIntoView({ block: "nearest" });
       return;
     }
+    if (event.target.closest("#close-event-preview")) {
+      closeEventPreview();
+      return;
+    }
     var previewStep = event.target.closest("[data-preview-step]");
-    if (previewStep && activePreviewPhotos().length) {
-      var previewCount = activePreviewPhotos().length;
+    if (previewStep && eventSlides(previewPhotoTarget().record).length) {
+      var previewCount = eventSlides(previewPhotoTarget().record).length;
       eventPreviewIndex = (eventPreviewIndex + Number(previewStep.getAttribute("data-preview-step")) + previewCount) % previewCount;
       var previewMedia = document.getElementById("event-preview-media");
       if (previewMedia) previewMedia.removeAttribute("data-media");
@@ -1650,17 +1841,21 @@
     if (removeEventPhoto && eventUploads) {
       var photoIndex = Number(removeEventPhoto.getAttribute("data-remove-event-photo"));
       var removedPhoto = eventUploads.photos[photoIndex];
+      var removeId = eventUploads.id;
       eventUploads.photos.splice(photoIndex, 1);
+      eventUploads.mediaOrder = (eventUploads.mediaOrder || []).filter(function (token) { return token !== removedPhoto; });
       paintEventMedia();
-      releaseEventFile(eventUploads.id, removedPhoto);
+      saveDraftMedia().catch(function () {}).then(function () { return releaseEventFile(removeId, removedPhoto); });
       eventMediaStatus("event-photo-status", "Foto quitada.");
       return;
     }
     if (event.target.closest("[data-remove-event-video]") && eventUploads) {
       var removedVideo = eventUploads.video;
+      var videoId = eventUploads.id;
       eventUploads.video = "";
+      eventUploads.mediaOrder = (eventUploads.mediaOrder || []).filter(function (token) { return token !== "video"; });
       paintEventMedia();
-      releaseEventFile(eventUploads.id, removedVideo);
+      saveDraftMedia().catch(function () {}).then(function () { return releaseEventFile(videoId, removedVideo); });
       eventMediaStatus("event-video-status", "Video quitado.");
       return;
     }
@@ -1697,10 +1892,9 @@
         if (!playerDraft && !pendingPlayer) rosterOpen = false;
       }
       if (nextTab === "jugadoras" && tab !== "jugadoras") rosterOpen = !!(playerDraft || pendingPlayer);
-      var leavingEvents = tab === "eventos" && (nextTab !== "eventos" || editingEvent || (eventUploads && (eventUploads.photos.length || eventUploads.video)));
-      if (leavingEvents) discardEventDraft();
+      if (tab === "eventos" && nextTab !== "eventos") discardEventDraft();
       tab = nextTab;
-      if (!leavingEvents) editingEvent = "";
+      if (nextTab !== "eventos") editingEvent = "";
       editingPlayer = "";
       setStatus("");
       render();
@@ -2110,7 +2304,10 @@
         note: eventNoteValue(),
         published: existing ? existing.published === true : false,
         photos: draft.photos.slice(),
-        video: draft.video || ""
+        video: draft.video || "",
+        mediaMode: draft.mediaMode || "both",
+        mediaOrder: eventMediaOrder(draft),
+        videoFrame: copyVideoFrame(draft.videoFrame)
       };
       var list = events.filter(function (item) { return item.id !== next.id; });
       list.push(next);
@@ -2605,6 +2802,13 @@
       var publishId = event.target.getAttribute("data-publish-event");
       var savedEvent = eventById(publishId);
       if (!savedEvent) return;
+      if (eventUploads && eventUploads.id === publishId) {
+        savedEvent.photos = eventUploads.photos.slice();
+        savedEvent.video = eventUploads.video || "";
+        savedEvent.mediaMode = eventUploads.mediaMode || "both";
+        savedEvent.mediaOrder = eventMediaOrder(eventUploads);
+        savedEvent.videoFrame = copyVideoFrame(eventUploads.videoFrame);
+      }
       var wantPublished = event.target.checked;
       var wasPublished = savedEvent.published === true;
       savedEvent.published = wantPublished;
@@ -2735,6 +2939,120 @@
   document.getElementById("event-photo-zoom-in").addEventListener("click", function () { setEventEditorZoom(eventEditorZoom + 0.15); });
   document.getElementById("apply-event-photo").addEventListener("click", applyEventPhotoEdit);
   document.getElementById("close-event-photo").addEventListener("click", closeEventPhotoEditor);
+  var videoAdjustRatio = "site";
+  var videoAdjustZoom = 1;
+  var videoAdjustX = 0;
+  var videoAdjustY = 0;
+  var videoAdjustDrag = null;
+  var videoAdjustRecord = null;
+  function paintVideoAdjust() {
+    var box = document.getElementById("event-video-frame");
+    var stage = document.getElementById("event-video-stage");
+    if (!box || !stage) return;
+    var parts = frameAspect(videoAdjustRatio).split("/").map(function (part) { return Number(part); });
+    var maxW = 320;
+    var maxH = 360;
+    var width = maxW;
+    var height = maxW * parts[1] / parts[0];
+    if (height > maxH) {
+      height = maxH;
+      width = maxH * parts[0] / parts[1];
+    }
+    box.style.width = Math.round(width) + "px";
+    box.style.height = Math.round(height) + "px";
+    stage.style.setProperty("--zoom", String(videoAdjustZoom));
+    stage.style.setProperty("--pan-x", videoAdjustX + "%");
+    stage.style.setProperty("--pan-y", videoAdjustY + "%");
+    document.querySelectorAll("[data-video-ratio]").forEach(function (button) {
+      var on = button.getAttribute("data-video-ratio") === videoAdjustRatio;
+      button.classList.toggle("is-on", on);
+      button.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+    var hint = document.getElementById("event-video-ratio-hint");
+    var ratio = eventPhotoRatios[videoAdjustRatio];
+    if (hint && ratio) hint.textContent = ratio.hint;
+    var slider = document.getElementById("event-video-zoom");
+    if (slider) slider.value = String(videoAdjustZoom);
+  }
+  function setVideoAdjustZoom(zoom) {
+    videoAdjustZoom = Math.min(3, Math.max(1, zoom));
+    paintVideoAdjust();
+  }
+  function openEventVideoEditor(record) {
+    if (!record || !record.video) return;
+    videoAdjustRecord = record;
+    var frame = copyVideoFrame(record.videoFrame);
+    videoAdjustRatio = frame.ratio;
+    videoAdjustZoom = frame.zoom;
+    videoAdjustX = frame.x;
+    videoAdjustY = frame.y;
+    var stage = document.getElementById("event-video-stage");
+    stage.src = eventMediaUrl(record.video, record.id);
+    stage.muted = true;
+    stage.loop = true;
+    stage.play().catch(function () {});
+    paintVideoAdjust();
+    var dialog = document.getElementById("event-video-dialog");
+    if (dialog && !dialog.open) dialog.showModal();
+  }
+  function closeEventVideoEditor() {
+    videoAdjustDrag = null;
+    videoAdjustRecord = null;
+    var stage = document.getElementById("event-video-stage");
+    if (stage) {
+      stage.pause();
+      stage.removeAttribute("src");
+      stage.load();
+    }
+    var dialog = document.getElementById("event-video-dialog");
+    if (dialog && dialog.open) dialog.close();
+  }
+  function applyVideoAdjust() {
+    if (!videoAdjustRecord) return;
+    var frame = copyVideoFrame({ ratio: videoAdjustRatio, zoom: videoAdjustZoom, x: videoAdjustX, y: videoAdjustY });
+    videoAdjustRecord.videoFrame = frame;
+    if (eventUploads && videoAdjustRecord.id && eventUploads.id === videoAdjustRecord.id) eventUploads.videoFrame = frame;
+    var saved = videoAdjustRecord.id ? eventById(videoAdjustRecord.id) : null;
+    if (saved && saved !== videoAdjustRecord) saved.videoFrame = frame;
+    var box = document.getElementById("event-preview-media");
+    if (box) box.removeAttribute("data-media");
+    paintEventPreview();
+    var persist = saved && eventUploads && eventUploads.id === saved.id ? saveDraftMedia() : (saved ? saveEventRecord() : Promise.resolve());
+    persist.then(function () {
+      eventMediaStatus("event-video-status", "Encuadre guardado. La página Eventos muestra el video así.");
+      closeEventVideoEditor();
+    }).catch(function (error) {
+      eventMediaStatus("event-video-status", error.message || "No se pudo guardar el encuadre.");
+    });
+  }
+  var videoFrameBox = document.getElementById("event-video-frame");
+  document.getElementById("event-video-dialog").addEventListener("click", function (event) {
+    var ratioButton = event.target.closest("[data-video-ratio]");
+    if (!ratioButton) return;
+    videoAdjustRatio = ratioButton.getAttribute("data-video-ratio");
+    paintVideoAdjust();
+  });
+  videoFrameBox.addEventListener("pointerdown", function (event) {
+    if (!videoAdjustRecord) return;
+    videoAdjustDrag = { id: event.pointerId, x: event.clientX, y: event.clientY, ox: videoAdjustX, oy: videoAdjustY };
+    videoFrameBox.setPointerCapture(event.pointerId);
+  });
+  videoFrameBox.addEventListener("pointermove", function (event) {
+    if (!videoAdjustDrag || event.pointerId !== videoAdjustDrag.id) return;
+    var rect = videoFrameBox.getBoundingClientRect();
+    videoAdjustX = Math.min(80, Math.max(-80, videoAdjustDrag.ox + ((event.clientX - videoAdjustDrag.x) / rect.width) * 100));
+    videoAdjustY = Math.min(80, Math.max(-80, videoAdjustDrag.oy + ((event.clientY - videoAdjustDrag.y) / rect.height) * 100));
+    paintVideoAdjust();
+  });
+  videoFrameBox.addEventListener("pointerup", function () { videoAdjustDrag = null; });
+  videoFrameBox.addEventListener("pointercancel", function () { videoAdjustDrag = null; });
+  document.getElementById("event-video-zoom").addEventListener("input", function (event) {
+    setVideoAdjustZoom(Number(event.target.value) || 1);
+  });
+  document.getElementById("event-video-zoom-out").addEventListener("click", function () { setVideoAdjustZoom(videoAdjustZoom - 0.15); });
+  document.getElementById("event-video-zoom-in").addEventListener("click", function () { setVideoAdjustZoom(videoAdjustZoom + 0.15); });
+  document.getElementById("apply-event-video").addEventListener("click", applyVideoAdjust);
+  document.getElementById("close-event-video").addEventListener("click", closeEventVideoEditor);
   infoDialog.addEventListener("cancel", function (event) {
     if (!document.getElementById("player-photo-editor").hidden) {
       event.preventDefault();

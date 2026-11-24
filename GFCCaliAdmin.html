@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css?v=44">
-  <link rel="stylesheet" href="css/admin.css?v=44">
+  <link rel="stylesheet" href="css/admin.css?v=49">
 </head>
 <body class="admin-body">
   <main id="login" class="login-screen">
@@ -172,6 +172,33 @@
     </div>
   </dialog>
 
-  <script src="js/admin.js?v=40"></script>
+  <dialog id="event-video-dialog" class="password-dialog event-photo-dialog" aria-labelledby="event-video-editor-title">
+    <h2 id="event-video-editor-title">Ajustar video</h2>
+    <p class="field-hint">Elige el formato, arrastra el video y acércalo. La página Eventos muestra este encuadre.</p>
+    <div class="photo-ratios" role="group" aria-label="Formato del video">
+      <button type="button" data-video-ratio="site">Sitio</button>
+      <button type="button" data-video-ratio="instagram">Instagram</button>
+      <button type="button" data-video-ratio="portrait">Vertical</button>
+      <button type="button" data-video-ratio="story">Historia</button>
+      <button type="button" data-video-ratio="facebook">Facebook</button>
+    </div>
+    <p id="event-video-ratio-hint" class="field-hint"></p>
+    <div class="photo-editor-stage">
+      <div id="event-video-frame" class="video-adjust-frame">
+        <video id="event-video-stage" muted playsinline loop aria-label="Encuadre del video"></video>
+      </div>
+    </div>
+    <div class="photo-zoom">
+      <button type="button" id="event-video-zoom-out" aria-label="Alejar">−</button>
+      <input id="event-video-zoom" type="range" min="1" max="3" step="0.01" value="1" aria-label="Zoom">
+      <button type="button" id="event-video-zoom-in" aria-label="Acercar">+</button>
+    </div>
+    <div class="admin-actions">
+      <button class="btn" type="button" id="apply-event-video">Guardar encuadre</button>
+      <button class="btn btn-ghost" type="button" id="close-event-video">Cancelar</button>
+    </div>
+  </dialog>
+
+  <script src="js/admin.js?v=45"></script>
 </body>
 </html>

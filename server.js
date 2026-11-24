@@ -677,6 +677,44 @@ function validRoster(list) {
   return players;
 }
 
+function cleanMediaMode(value) {
+  const mode = cleanText(value, 10);
+  return mode === "video" || mode === "photos" || mode === "both" ? mode : "both";
+}
+
+function cleanMediaOrder(value, photos, video) {
+  const order = [];
+  if (Array.isArray(value)) {
+    value.forEach(function (item) {
+      const token = cleanText(item, 24);
+      if (token === "video") {
+        if (video && order.indexOf("video") === -1) order.push("video");
+      } else if (PHOTO_NAME.test(token) && photos.indexOf(token) !== -1 && order.indexOf(token) === -1) order.push(token);
+    });
+  }
+  if (video && order.indexOf("video") === -1) order.unshift("video");
+  photos.forEach(function (name) {
+    if (order.indexOf(name) === -1) order.push(name);
+  });
+  return order;
+}
+
+function cleanVideoFrame(value) {
+  const frame = value && typeof value === "object" ? value : {};
+  const ratios = { site: 1, instagram: 1, portrait: 1, story: 1, facebook: 1 };
+  const ratio = ratios[cleanText(frame.ratio, 12)] ? cleanText(frame.ratio, 12) : "site";
+  let zoom = Number(frame.zoom);
+  if (!Number.isFinite(zoom)) zoom = 1;
+  zoom = Math.min(3, Math.max(1, Math.round(zoom * 100) / 100));
+  let x = Number(frame.x);
+  let y = Number(frame.y);
+  if (!Number.isFinite(x)) x = 0;
+  if (!Number.isFinite(y)) y = 0;
+  x = Math.min(80, Math.max(-80, Math.round(x * 10) / 10));
+  y = Math.min(80, Math.max(-80, Math.round(y * 10) / 10));
+  return { ratio: ratio, zoom: zoom, x: x, y: y };
+}
+
 function validEvents(list) {
   if (!Array.isArray(list) || list.length > 100) return null;
   const ids = new Set();
@@ -693,6 +731,7 @@ function validEvents(list) {
     if (!ID.test(id) || ids.has(id) || name.length < 1 || !validDate(date)) return null;
     if (time && !/^\d{2}:\d{2}$/.test(time)) return null;
     if (video && !VIDEO_NAME.test(video)) video = "";
+    const photos = cleanPhotos(item.photos);
     ids.add(id);
     events.push({
       id: id,
@@ -702,8 +741,11 @@ function validEvents(list) {
       place: place,
       note: note,
       published: item.published === true,
-      photos: cleanPhotos(item.photos),
-      video: video
+      photos: photos,
+      video: video,
+      mediaMode: cleanMediaMode(item.mediaMode),
+      mediaOrder: cleanMediaOrder(item.mediaOrder, photos, video),
+      videoFrame: cleanVideoFrame(item.videoFrame)
     });
   }
   return events;
@@ -1021,7 +1063,10 @@ async function handleApi(req, res, pathname) {
         place: item.place,
         note: item.note,
         photos: item.photos || [],
-        video: item.video || ""
+        video: item.video || "",
+        mediaMode: item.mediaMode || "both",
+        mediaOrder: item.mediaOrder || [],
+        videoFrame: item.videoFrame || { ratio: "site", zoom: 1, x: 0, y: 0 }
       };
     });
     return sendJson(res, 200, { events: published });
