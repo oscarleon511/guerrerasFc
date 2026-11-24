@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css?v=48">
-  <link rel="stylesheet" href="css/admin.css?v=58">
+  <link rel="stylesheet" href="css/admin.css?v=61">
 </head>
 <body class="admin-body">
   <main id="login" class="login-screen">
@@ -79,7 +79,7 @@
   <dialog id="remove-partner-dialog" class="password-dialog" aria-labelledby="remove-partner-title">
     <h2 id="remove-partner-title">Quitar</h2>
     <p id="remove-partner-copy"></p>
-    <p>Esta acción quita el registro y su foto. No se puede deshacer.</p>
+    <p id="remove-partner-note">Esta acción quita el registro y su foto. No se puede deshacer.</p>
     <div class="admin-actions">
       <button class="btn" type="button" id="confirm-remove-partner">Quitar</button>
       <button class="btn btn-ghost" type="button" id="cancel-remove-partner">Cancelar</button>
@@ -216,6 +216,6 @@
     <img alt="" data-partner-photo>
   </dialog>
 
-  <script src="js/admin.js?v=59"></script>
+  <script src="js/admin.js?v=63"></script>
 </body>
 </html>

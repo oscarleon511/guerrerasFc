@@ -24,6 +24,15 @@
   var sponsorUploadBusy = false;
   var sponsorFilters = { name: "", link: "", photo: "" };
   var selectedSponsors = {};
+  var locations = [];
+  var locationFormOpen = false;
+  var editingLocation = "";
+  var locationDraft = null;
+  var locationSaveBusy = false;
+  var locationFilters = { team: "", field: "", address: "", day: "", time: "" };
+  var skipLocationCapture = false;
+  var locationDays = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  var locationDayOrder = [1, 2, 3, 4, 5, 6, 0];
   var eventNoteLimit = 10000;
   var editingPlayer = "";
   var rosterOpen = false;
@@ -52,7 +61,7 @@
 
   var siteTabs = [
     { id: "inicio", label: "Inicio", copy: "Página de entrada del club. Presenta a Guerreras FC, las categorías A, B y C, las categorías Plus y la invitación a unirse." },
-    { id: "sedes", label: "Sedes", copy: "Calendario y mapa de las cuatro sedes: Sur 1, Sur 2, Norte y Ciudad del Campo." },
+    { id: "sedes", label: "Sedes", copy: "Mapa y horarios de entrenamiento. Cada sede guardada aparece en el mapa." },
     { id: "plantilla", label: "Plantilla", copy: "Jugadoras del equipo y el cuerpo técnico." },
     { id: "nosotras", label: "Nosotras", copy: "Visión, misión, categorías e historia del club." },
     { id: "patrocinadores", label: "Patrocinadores", copy: "Aliados, descuentos y el torneo." },
@@ -83,6 +92,16 @@
   var sedes = ["Guerreras Sur 1", "Guerreras Sur 2", "Guerreras Norte", "Guerreras Ciudad del Cample", "N/A"];
   var categories = ["A", "B", "C"];
   var extras = ["All Stars", "Futbol 11", "La Seleccion", "All Stars + Futbol 11", "All Stars + Futbol 11 + Seleccion", "All Stars + Seleccion", "Futbol 11 + Seleccion", "No aplica"];
+  var squadSheets = [
+    { id: "cat-a", label: "A", group: "category", match: "A" },
+    { id: "cat-b", label: "B", group: "category", match: "B" },
+    { id: "cat-c", label: "C", group: "category", match: "C" },
+    { id: "all-stars", label: "All Stars", group: "extra", match: "All Stars" },
+    { id: "futbol-11", label: "Futbol 11", group: "extra", match: "Futbol 11" },
+    { id: "seleccion", label: "La Seleccion", group: "extra", match: "La Seleccion" },
+    { id: "no-aplica", label: "No aplica", group: "extra", match: "No aplica", exact: true }
+  ];
+  var squadSheet = "cat-a";
   var columns = [
     ["name", "Nombre Completo"],
     ["nickname", "Apodo"],
@@ -1320,8 +1339,28 @@
     return item[key];
   }
 
+  function rosterViewOnly() {
+    return tab === "plantilla";
+  }
+
+  function playerOnSheet(item, sheet) {
+    if (sheet.group === "category") return String(item.category || "").trim() === sheet.match;
+    var extra = String(item.extra || "");
+    if (sheet.exact) return foldText(extra) === foldText(sheet.match);
+    return foldText(extra).indexOf(foldText(sheet.match)) !== -1;
+  }
+
+  function currentSquadSheet() {
+    for (var i = 0; i < squadSheets.length; i += 1) {
+      if (squadSheets[i].id === squadSheet) return squadSheets[i];
+    }
+    return squadSheets[0];
+  }
+
   function visiblePlayers() {
-    var filtered = players.filter(function (item) {
+    var source = players;
+    if (rosterViewOnly()) source = players.filter(function (item) { return playerOnSheet(item, currentSquadSheet()); });
+    var filtered = source.filter(function (item) {
       return columns.every(function (column) {
         if (!columnFiltered(column[0])) return true;
         return matchesFilter(item, column[0], String(rosterFilters[column[0]] || "").trim());
@@ -1374,7 +1413,7 @@
     });
     return rows.map(function (item) {
       var duplicate = counts[rosterKey(item)] > 1;
-      var editing = item.id === editingPlayer;
+      var editing = !rosterViewOnly() && item.id === editingPlayer;
       var selected = Boolean(selectedPlayers[item.id]);
       var classes = [];
       if (editing) classes.push("is-editing");
@@ -1392,8 +1431,9 @@
       var actions = editing
         ? "<button class=\"btn\" type=\"button\" data-save-player=\"" + escapeHtml(item.id) + "\">Guardar</button><button class=\"btn btn-ghost\" type=\"button\" data-cancel-edit>Cancelar</button>"
         : "<button class=\"btn btn-ghost\" type=\"button\" data-info-player=\"" + escapeHtml(item.id) + "\"" + (photoCount ? " title=\"" + photoCount + (photoCount === 1 ? " foto guardada" : " fotos guardadas") + "\"" : "") + ">Info" + (photoCount ? " (" + photoCount + ")" : "") + "</button><button class=\"btn btn-ghost\" type=\"button\" data-edit-player=\"" + escapeHtml(item.id) + "\">Editar</button><button class=\"btn btn-ghost\" type=\"button\" data-delete-player=\"" + escapeHtml(item.id) + "\">Quitar</button>";
-      var check = "<td class=\"roster-check\"><input type=\"checkbox\" data-select-player=\"" + escapeHtml(item.id) + "\" aria-label=\"Seleccionar a " + escapeHtml(item.name) + "\"" + (selected ? " checked" : "") + "></td>";
-      return "<tr" + (classes.length ? " class=\"" + classes.join(" ") + "\"" : "") + ">" + check + cells + "<td class=\"roster-actions\">" + actions + "</td></tr>";
+      var check = rosterViewOnly() ? "" : "<td class=\"roster-check\"><input type=\"checkbox\" data-select-player=\"" + escapeHtml(item.id) + "\" aria-label=\"Seleccionar a " + escapeHtml(item.name) + "\"" + (selected ? " checked" : "") + "></td>";
+      var actionCell = rosterViewOnly() ? "" : "<td class=\"roster-actions\">" + actions + "</td>";
+      return "<tr" + (classes.length ? " class=\"" + classes.join(" ") + "\"" : "") + ">" + check + cells + actionCell + "</tr>";
     }).join("");
   }
 
@@ -1447,7 +1487,7 @@
   }
 
   function rosterHeadHtml() {
-    var head = "<th class=\"roster-check\"><input type=\"checkbox\" id=\"roster-select-all\" aria-label=\"Seleccionar todas\"></th>";
+    var head = rosterViewOnly() ? "" : "<th class=\"roster-check\"><input type=\"checkbox\" id=\"roster-select-all\" aria-label=\"Seleccionar todas\"></th>";
     head += shownColumns().map(function (column) {
       var key = column[0];
       var filtered = columnFiltered(key);
@@ -1457,7 +1497,7 @@
       if (key === "photos") classes.push("is-photos");
       return "<th data-column=\"" + key + "\" aria-sort=\"" + rosterSortState(key) + "\"" + (classes.length ? " class=\"" + classes.join(" ") + "\"" : "") + "><div class=\"roster-head-row\"><span class=\"roster-drag\" draggable=\"true\" data-drag-column=\"" + key + "\" role=\"button\" tabindex=\"0\" title=\"Arrastrar para mover\" aria-label=\"Mover " + escapeHtml(column[1]) + "\">" + dragIcon + "</span><button type=\"button\" class=\"roster-sort\" data-sort=\"" + key + "\"><span class=\"roster-filter-mark\" aria-hidden=\"true\"></span><span>" + escapeHtml(column[1]) + "</span><span class=\"roster-arrow\" aria-hidden=\"true\">" + rosterArrow(key) + "</span></button></div><span class=\"sr-only roster-filter-note\"" + (filtered ? "" : " hidden") + ">Filtro activo</span>" + filterControl(column) + "</th>";
     }).join("");
-    return head + "<th class=\"roster-actions\">Acciones</th>";
+    return head + (rosterViewOnly() ? "" : "<th class=\"roster-actions\">Acciones</th>");
   }
 
   function columnPickerItemsHtml() {
@@ -1504,6 +1544,43 @@
     var emptyText = !players.length ? "No hay jugadoras." : "Ninguna jugadora coincide con el filtro.";
     var emptyHidden = rows.length ? " hidden" : "";
     return "<section class=\"roster-layout" + (rosterOpen ? " is-open" : "") + "\"><div class=\"roster-side panel-card\"><button type=\"button\" class=\"roster-toggle\" id=\"roster-toggle\" aria-expanded=\"" + (rosterOpen ? "true" : "false") + "\" aria-controls=\"roster-body\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 9l6 6 6-6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg>Agregar jugadora</button><div id=\"roster-body\"" + (rosterOpen ? "" : " hidden") + "><p>La plantilla pública con fotos no cambia.</p>" + playerForm() + "<div class=\"drop-zone\" id=\"roster-drop\"><p>Suelta el Excel aquí o elige un archivo.</p><div class=\"admin-actions\"><label class=\"btn\" for=\"roster-file\">Elegir Excel</label><a class=\"btn btn-ghost\" href=\"/api/admin/roster/template\">Descargar plantilla</a></div><input id=\"roster-file\" type=\"file\" accept=\".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet\" hidden></div></div></div><div class=\"roster-grid panel-card\"><div class=\"roster-toolbar\"><p>Las celdas en rojo repiten el mismo nombre completo y la misma edad.</p><div class=\"roster-toolbar-actions\"><a class=\"btn btn-ghost\" href=\"/api/admin/roster/report\">Generar reporte</a><button class=\"btn btn-danger\" type=\"button\" id=\"bulk-delete\" disabled>Eliminar seleccionadas</button></div></div><div class=\"roster-board\"><div class=\"roster-frame\"><div class=\"roster-scroll\"><table><thead><tr id=\"roster-head\">" + rosterHeadHtml() + "</tr></thead><tbody id=\"roster-rows\">" + rosterRowHtml(rows) + "</tbody></table></div><p id=\"roster-empty\" class=\"roster-empty\"" + emptyHidden + ">" + emptyText + "</p></div><aside class=\"roster-columns" + (columnsOpen ? "" : " is-collapsed") + "\" aria-labelledby=\"roster-columns-title\"><div class=\"roster-columns-head\"><button type=\"button\" class=\"columns-toggle\" id=\"columns-toggle\" aria-expanded=\"" + (columnsOpen ? "true" : "false") + "\" aria-controls=\"roster-column-body\" aria-label=\"" + (columnsOpen ? "Ocultar columnas" : "Mostrar columnas") + "\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 6l6 6-6 6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></button><p id=\"roster-columns-title\" class=\"roster-columns-title\">Columnas</p></div><div id=\"roster-column-body\"><p class=\"roster-columns-note\">Arrastra el icono para cambiar el orden de la tabla.</p><ul id=\"roster-column-list\">" + columnPickerItemsHtml() + "</ul></div></aside></div></div></section>";
+  }
+
+  function squadSheetButton(sheet) {
+    var count = players.filter(function (item) { return playerOnSheet(item, sheet); }).length;
+    var active = sheet.id === currentSquadSheet().id;
+    return "<button type=\"button\" class=\"squad-sheet" + (active ? " is-active" : "") + "\" data-squad-sheet=\"" + sheet.id + "\" role=\"tab\" aria-selected=\"" + (active ? "true" : "false") + "\">" + escapeHtml(sheet.label) + "<span class=\"squad-count\">" + count + "</span></button>";
+  }
+
+  function squadPanel() {
+    var page = siteTabs.filter(function (item) { return item.id === "plantilla"; })[0];
+    var rows = visiblePlayers();
+    var emptyText = !players.length ? "No hay jugadoras." : "Ninguna jugadora coincide con el filtro.";
+    var emptyHidden = rows.length ? " hidden" : "";
+    var categoryTabs = squadSheets.filter(function (sheet) { return sheet.group === "category"; }).map(squadSheetButton).join("");
+    var extraTabs = squadSheets.filter(function (sheet) { return sheet.group === "extra"; }).map(squadSheetButton).join("");
+    return sitePanel(page) +
+      "<section class=\"roster-layout is-squad\"><div class=\"roster-grid panel-card\"><div class=\"roster-toolbar\"><p>Esta vista lee las jugadoras de la pestaña Jugadoras. Para editar o quitar, usa esa pestaña.</p><div class=\"roster-toolbar-actions\"><button class=\"btn\" type=\"button\" id=\"squad-refresh\">Actualizar</button></div></div><div class=\"squad-sheets\" role=\"tablist\" aria-label=\"Hojas de la plantilla\"><span class=\"squad-sheet-label\">Categoría</span>" + categoryTabs + "<span class=\"squad-sheet-label\">Adicionales</span>" + extraTabs + "</div><div class=\"roster-board\"><div class=\"roster-frame\"><div class=\"roster-scroll\"><table><thead><tr id=\"roster-head\">" + rosterHeadHtml() + "</tr></thead><tbody id=\"roster-rows\">" + rosterRowHtml(rows) + "</tbody></table></div><p id=\"roster-empty\" class=\"roster-empty\"" + emptyHidden + ">" + emptyText + "</p></div><aside class=\"roster-columns" + (columnsOpen ? "" : " is-collapsed") + "\" aria-labelledby=\"roster-columns-title\"><div class=\"roster-columns-head\"><button type=\"button\" class=\"columns-toggle\" id=\"columns-toggle\" aria-expanded=\"" + (columnsOpen ? "true" : "false") + "\" aria-controls=\"roster-column-body\" aria-label=\"" + (columnsOpen ? "Ocultar columnas" : "Mostrar columnas") + "\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 6l6 6-6 6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></button><p id=\"roster-columns-title\" class=\"roster-columns-title\">Columnas</p></div><div id=\"roster-column-body\"><p class=\"roster-columns-note\">Arrastra el icono para cambiar el orden de la tabla.</p><ul id=\"roster-column-list\">" + columnPickerItemsHtml() + "</ul></div></aside></div></div></section>";
+  }
+
+  function refreshSquad() {
+    var button = document.getElementById("squad-refresh");
+    if (button) button.disabled = true;
+    setStatus("Actualizando la plantilla…");
+    api("/api/admin/roster", "GET").then(function (result) {
+      if (button) button.disabled = false;
+      if (!result.ok) {
+        setStatus(result.data.error || "No se pudo actualizar la plantilla.");
+        return;
+      }
+      players = result.data.players || [];
+      editingPlayer = "";
+      setStatus("Plantilla actualizada.");
+      render();
+    }).catch(function () {
+      if (button) button.disabled = false;
+      setStatus("No se pudo actualizar la plantilla.");
+    });
   }
 
   function groupKey(value) {
@@ -2406,9 +2483,208 @@
     });
   }
 
+  function locationById(id) {
+    return locations.filter(function (item) { return item.id === id; })[0] || null;
+  }
+
+  function locationClock(value) {
+    var match = /^(\d{2}):(\d{2})$/.exec(String(value || ""));
+    if (!match) return "";
+    var hour = Number(match[1]);
+    var suffix = hour >= 12 ? "p. m." : "a. m.";
+    return (hour % 12 || 12) + ":" + match[2] + " " + suffix;
+  }
+
+  function captureLocationForm() {
+    if (skipLocationCapture) {
+      skipLocationCapture = false;
+      return;
+    }
+    var form = document.getElementById("location-form");
+    if (!form || !locationDraft) return;
+    locationDraft.team = form.elements.team.value;
+    locationDraft.field = form.elements.field.value;
+    locationDraft.address = form.elements.address.value;
+    locationDraft.sessions = Array.prototype.map.call(form.querySelectorAll("[data-session-row]"), function (row) {
+      return {
+        day: row.querySelector("[data-session-day]").value,
+        time: row.querySelector("[data-session-time]").value
+      };
+    });
+  }
+
+  function locationSessionRows() {
+    var sessions = locationDraft && locationDraft.sessions ? locationDraft.sessions : [];
+    return sessions.map(function (session, index) {
+      var days = locationDayOrder.map(function (day) {
+        return "<option value=\"" + day + "\"" + (String(session.day) === String(day) ? " selected" : "") + ">" + locationDays[day] + "</option>";
+      }).join("");
+      return "<div class=\"location-session\" data-session-row><label class=\"field\">Día<select data-session-day aria-label=\"Día del horario " + (index + 1) + "\">" + days + "</select></label><label class=\"field\">Hora<input data-session-time type=\"time\" value=\"" + escapeHtml(session.time || "") + "\" aria-label=\"Hora del horario " + (index + 1) + "\"></label><button class=\"btn btn-ghost\" type=\"button\" data-remove-session>Quitar</button></div>";
+    }).join("");
+  }
+
+  function locationFormHtml() {
+    var draft = locationDraft || { team: "", field: "", address: "", sessions: [] };
+    return "<form id=\"location-form\" class=\"form-grid\">" +
+      "<h2 class=\"wide\">" + (editingLocation ? "Editar sede" : "Nueva sede") + "</h2>" +
+      "<p id=\"location-error\" class=\"form-error wide\" role=\"alert\" hidden></p>" +
+      "<label class=\"field\">Nombre de la sede<input name=\"team\" required maxlength=\"80\" value=\"" + escapeHtml(draft.team) + "\" placeholder=\"Guerreras Norte\"></label>" +
+      "<label class=\"field\">Nombre de la cancha<input name=\"field\" required maxlength=\"80\" value=\"" + escapeHtml(draft.field) + "\" placeholder=\"Cancha Wembley\"></label>" +
+      "<label class=\"field wide\">Dirección de la cancha<textarea name=\"address\" required maxlength=\"300\" rows=\"3\" placeholder=\"Calle 58 Norte con Avenida 3 Norte&#10;Cali, Valle del Cauca\">" + escapeHtml(draft.address) + "</textarea></label>" +
+      "<p class=\"field-hint wide\">Escribe la calle y, en otra línea, la ciudad. El mapa ubica la sede con esta dirección.</p>" +
+      "<div class=\"wide\"><span class=\"field-label\">Días y horas de entrenamiento</span><p class=\"field-hint\">Agrega un horario por sesión. El mismo día puede repetirse con otra hora. Si no hay entrenamiento, quita los horarios.</p><div class=\"location-sessions\">" + locationSessionRows() + "</div></div>" +
+      "<div class=\"location-actions wide\"><button class=\"btn btn-ghost\" type=\"button\" id=\"add-location-session\">Agregar horario</button><span class=\"location-actions-space\"></span><button class=\"btn\" type=\"submit\">" + (editingLocation ? "Guardar sede" : "Agregar sede") + "</button><button class=\"btn btn-ghost\" type=\"button\" id=\"cancel-location\">Cancelar</button></div>" +
+      "</form>";
+  }
+
+  function locationColumn(item, kind) {
+    var sessions = item.sessions || [];
+    if (!sessions.length) return "—";
+    return sessions.map(function (session) {
+      return escapeHtml(kind === "day" ? locationDays[session.day] || "" : locationClock(session.time));
+    }).join("<br>");
+  }
+
+  function visibleLocations() {
+    var team = locationFilters.team.trim().toLowerCase();
+    var field = locationFilters.field.trim().toLowerCase();
+    var address = locationFilters.address.trim().toLowerCase();
+    var time = locationFilters.time.trim().toLowerCase();
+    return locations.filter(function (item) {
+      if (team && item.team.toLowerCase().indexOf(team) === -1) return false;
+      if (field && item.field.toLowerCase().indexOf(field) === -1) return false;
+      if (address && String(item.address || "").toLowerCase().indexOf(address) === -1) return false;
+      if (locationFilters.day === "" && !time) return true;
+      return (item.sessions || []).some(function (session) {
+        if (locationFilters.day !== "" && String(session.day) !== String(locationFilters.day)) return false;
+        if (!time) return true;
+        var label = locationClock(session.time).toLowerCase();
+        return label.indexOf(time) !== -1 || String(session.time).indexOf(time) !== -1;
+      });
+    });
+  }
+
+  function locationFilterHead(label, key, control) {
+    var active = key === "day" ? locationFilters.day !== "" : locationFilters[key].trim() !== "";
+    return "<th" + (active ? " class=\"is-filtered\"" : "") + "><span>" + label + "</span>" + control + "</th>";
+  }
+
+  function locationRows() {
+    var shown = visibleLocations();
+    if (!locations.length) return "<tr><td colspan=\"6\">Todavía no hay sedes agregadas.</td></tr>";
+    if (!shown.length) return "<tr><td colspan=\"6\">Ninguna sede coincide con el filtro.</td></tr>";
+    return shown.map(function (item) {
+      return "<tr><td>" + escapeHtml(item.team) + "</td><td>" + escapeHtml(item.field) + "</td><td class=\"location-address\">" + escapeHtml(item.address).replace(/\n/g, "<br>") + "</td><td>" + locationColumn(item, "day") + "</td><td>" + locationColumn(item, "time") + "</td><td><div class=\"benefit-actions\">" +
+        "<button class=\"btn btn-ghost\" type=\"button\" data-edit-location=\"" + escapeHtml(item.id) + "\">Editar</button>" +
+        "<button class=\"btn btn-ghost\" type=\"button\" data-remove-location=\"" + escapeHtml(item.id) + "\">Quitar</button>" +
+        "</div></td></tr>";
+    }).join("");
+  }
+
+  function paintLocationRows() {
+    var body = document.querySelector(".location-table tbody");
+    if (!body) return;
+    body.innerHTML = locationRows();
+  }
+
+  function locationsPanel() {
+    var page = siteTabs.filter(function (item) { return item.id === "sedes"; })[0];
+    var dayOptions = "<option value=\"\">Todos</option>" + locationDayOrder.map(function (day) {
+      return "<option value=\"" + day + "\"" + (String(locationFilters.day) === String(day) ? " selected" : "") + ">" + locationDays[day] + "</option>";
+    }).join("");
+    return sitePanel(page) +
+      "<article class=\"panel-card benefits-admin\"><div class=\"admin-actions\"><button class=\"btn\" type=\"button\" id=\"add-location\"" + (locationFormOpen ? " hidden" : "") + ">Agregar sede</button></div>" +
+      (locationFormOpen ? locationFormHtml() : "") +
+      "<div class=\"benefit-table-wrap\"><table class=\"benefit-table location-table\"><thead><tr>" +
+      locationFilterHead("Nombre de la sede", "team", "<input class=\"roster-filter\" data-location-filter=\"team\" type=\"search\" placeholder=\"Filtrar\" aria-label=\"Filtrar nombre de la sede\" value=\"" + escapeHtml(locationFilters.team) + "\">") +
+      locationFilterHead("Nombre de la cancha", "field", "<input class=\"roster-filter\" data-location-filter=\"field\" type=\"search\" placeholder=\"Filtrar\" aria-label=\"Filtrar nombre de la cancha\" value=\"" + escapeHtml(locationFilters.field) + "\">") +
+      locationFilterHead("Dirección", "address", "<input class=\"roster-filter\" data-location-filter=\"address\" type=\"search\" placeholder=\"Filtrar\" aria-label=\"Filtrar dirección\" value=\"" + escapeHtml(locationFilters.address) + "\">") +
+      locationFilterHead("Días de entrenamiento", "day", "<select class=\"roster-filter\" data-location-filter=\"day\" aria-label=\"Filtrar día de entrenamiento\">" + dayOptions + "</select>") +
+      locationFilterHead("Horas de entrenamiento", "time", "<input class=\"roster-filter\" data-location-filter=\"time\" type=\"search\" placeholder=\"Filtrar\" aria-label=\"Filtrar hora de entrenamiento\" value=\"" + escapeHtml(locationFilters.time) + "\">") +
+      "<th>Acciones</th></tr></thead><tbody>" +
+      locationRows() + "</tbody></table></div></article>";
+  }
+
+  function openLocationForm(id) {
+    var current = id ? locationById(id) : null;
+    if (id && !current) return;
+    locationFormOpen = true;
+    editingLocation = id || "";
+    locationDraft = {
+      id: current ? current.id : "l-" + Date.now().toString(36),
+      team: current ? current.team : "",
+      field: current ? current.field : "",
+      address: current ? current.address : "",
+      sessions: current && current.sessions && current.sessions.length
+        ? current.sessions.map(function (session) { return { day: String(session.day), time: session.time }; })
+        : [{ day: "1", time: "" }]
+    };
+    skipLocationCapture = true;
+    render();
+    var form = document.getElementById("location-form");
+    if (form) form.scrollIntoView({ block: "nearest" });
+  }
+
+  function setLocationError(message) {
+    var error = document.getElementById("location-error");
+    if (!error) return;
+    error.hidden = !message;
+    error.textContent = message || "";
+  }
+
+  function submitLocation(form) {
+    if (locationSaveBusy || !locationDraft) return;
+    captureLocationForm();
+    var team = locationDraft.team.trim();
+    var field = locationDraft.field.trim();
+    var address = locationDraft.address.replace(/\r\n/g, "\n").split("\n").map(function (line) { return line.trim(); }).filter(Boolean).join("\n");
+    var sessions = [];
+    var seen = {};
+    var invalid = locationDraft.sessions.some(function (session) {
+      if (!session.time) return false;
+      if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(session.time)) return true;
+      var key = session.day + "-" + session.time;
+      if (seen[key]) return true;
+      seen[key] = true;
+      sessions.push({ day: Number(session.day), time: session.time });
+      return false;
+    });
+    if (!team || !field || !address) return setLocationError("Escribe el nombre de la sede, la cancha y la dirección.");
+    if (invalid) return setLocationError("Revisa los horarios. El mismo día no puede repetir la misma hora.");
+    setLocationError("");
+    var next = { id: locationDraft.id, team: team, field: field, address: address, sessions: sessions };
+    var list = locations.map(function (item) { return item.id === next.id ? next : item; });
+    if (!locationById(next.id)) list = locations.concat([next]);
+    locationSaveBusy = true;
+    var button = form.querySelector("button[type=\"submit\"]");
+    if (button) button.disabled = true;
+    setStatus("Buscando la sede en el mapa…");
+    api("/api/admin/locations", "PUT", { locations: list }).then(function (result) {
+      locationSaveBusy = false;
+      if (!result.ok) {
+        if (button) button.disabled = false;
+        setStatus("");
+        setLocationError(result.data.error || "No se pudo guardar la sede.");
+        return;
+      }
+      locations = result.data.locations || [];
+      locationFormOpen = false;
+      editingLocation = "";
+      locationDraft = null;
+      setStatus("Sede guardada. Ya aparece en el mapa.");
+      render();
+    }).catch(function () {
+      locationSaveBusy = false;
+      if (button) button.disabled = false;
+      setStatus("");
+      setLocationError("No se pudo guardar la sede.");
+    });
+  }
+
   function render() {
     captureBenefitEdits();
     captureSponsorEdits();
+    captureLocationForm();
     if (tab === "jugadoras") {
       if (collapseAddForm) {
         playerDraft = null;
@@ -2418,8 +2694,16 @@
     }
     paintNavs();
     var site = siteTabs.filter(function (item) { return item.id === tab; })[0];
-    if (site && site.id !== "beneficios" && site.id !== "patrocinadores") {
+    if (site && site.id !== "beneficios" && site.id !== "patrocinadores" && site.id !== "sedes" && site.id !== "plantilla") {
       panel.innerHTML = sitePanel(site);
+      return;
+    }
+    if (tab === "sedes") {
+      panel.innerHTML = locationsPanel();
+      return;
+    }
+    if (tab === "plantilla") {
+      panel.innerHTML = squadPanel();
       return;
     }
     if (tab === "beneficios") {
@@ -2479,7 +2763,8 @@
       api("/api/admin/events", "GET"),
       api("/api/admin/roster", "GET"),
       api("/api/admin/benefits", "GET"),
-      api("/api/admin/sponsors", "GET")
+      api("/api/admin/sponsors", "GET"),
+      api("/api/admin/locations", "GET")
     ]).then(function (results) {
       if (!results[0].ok) throw new Error("session");
       settings = results[0].data;
@@ -2487,6 +2772,7 @@
       players = results[2].ok ? results[2].data.players || [] : [];
       benefits = results[3].ok ? results[3].data.benefits || [] : [];
       sponsors = results[4].ok ? results[4].data.sponsors || [] : [];
+      locations = results[5].ok ? results[5].data.locations || [] : [];
       rememberBenefits();
       rememberSponsors();
     });
@@ -2611,6 +2897,68 @@
         if (partnerPhoto.getAttribute("src") !== partnerSource.src) partnerPhoto.src = partnerSource.src;
         partnerPhotoDialog.showModal();
       }
+      return;
+    }
+    if (event.target.closest("#squad-refresh")) {
+      refreshSquad();
+      return;
+    }
+    var squadTab = event.target.closest("[data-squad-sheet]");
+    if (squadTab) {
+      squadSheet = squadTab.getAttribute("data-squad-sheet");
+      render();
+      return;
+    }
+    if (event.target.closest("#add-location")) {
+      openLocationForm("");
+      return;
+    }
+    if (event.target.closest("#cancel-location")) {
+      locationFormOpen = false;
+      editingLocation = "";
+      locationDraft = null;
+      render();
+      return;
+    }
+    if (event.target.closest("#add-location-session")) {
+      captureLocationForm();
+      locationDraft.sessions.push({ day: "1", time: "" });
+      skipLocationCapture = true;
+      render();
+      return;
+    }
+    var removeSession = event.target.closest("[data-remove-session]");
+    if (removeSession && locationDraft) {
+      captureLocationForm();
+      var sessionRow = removeSession.closest("[data-session-row]");
+      var sessionRows = Array.prototype.slice.call(document.querySelectorAll("[data-session-row]"));
+      var sessionIndex = sessionRows.indexOf(sessionRow);
+      if (sessionIndex >= 0) locationDraft.sessions.splice(sessionIndex, 1);
+      skipLocationCapture = true;
+      render();
+      return;
+    }
+    var editLocation = event.target.closest("[data-edit-location]");
+    if (editLocation) {
+      openLocationForm(editLocation.getAttribute("data-edit-location"));
+      return;
+    }
+    var removeLocation = event.target.closest("[data-remove-location]");
+    if (removeLocation) {
+      var locationId = removeLocation.getAttribute("data-remove-location");
+      var removedLocation = locationById(locationId);
+      if (!removedLocation) return;
+      askPartnerRemove("Quitar sede", "¿Quitar la sede " + removedLocation.team + "?", function () {
+        if (locationDraft && locationDraft.id === locationId) {
+          locationDraft = null;
+          locationFormOpen = false;
+          editingLocation = "";
+        }
+        var remaining = locations.filter(function (item) { return item.id !== locationId; });
+        saveLocationList(remaining, "Sede eliminada.").then(function (result) {
+          if (result && !result.ok) render();
+        });
+      }, "Esta acción quita la sede del mapa y del calendario. No se puede deshacer.");
       return;
     }
     if (event.target.closest("#add-benefit")) {
@@ -3333,6 +3681,14 @@
       paintSponsorRows();
       return;
     }
+    var locationFilter = event.target.closest("[data-location-filter]");
+    if (locationFilter && locationFilter.tagName !== "SELECT") {
+      locationFilters[locationFilter.getAttribute("data-location-filter")] = locationFilter.value;
+      var locationHead = locationFilter.closest("th");
+      if (locationHead) locationHead.classList.toggle("is-filtered", locationFilter.value.trim() !== "");
+      paintLocationRows();
+      return;
+    }
     var benefitFilter = event.target.closest("[data-benefit-filter]");
     if (benefitFilter && benefitFilter.tagName !== "SELECT") {
       benefitFilters[benefitFilter.getAttribute("data-benefit-filter")] = benefitFilter.value;
@@ -3433,6 +3789,14 @@
       var benefitRow = benefitBox.closest("tr");
       if (benefitRow) benefitRow.classList.toggle("is-selected", benefitBox.checked);
       syncBenefitSelection();
+      return;
+    }
+    var locationDayFilter = event.target.closest("select[data-location-filter]");
+    if (locationDayFilter) {
+      locationFilters.day = locationDayFilter.value;
+      var locationDayHead = locationDayFilter.closest("th");
+      if (locationDayHead) locationDayHead.classList.toggle("is-filtered", locationDayFilter.value !== "");
+      paintLocationRows();
       return;
     }
     var benefitPhotoFilter = event.target.closest("select[data-benefit-filter]");
@@ -3674,6 +4038,11 @@
   });
 
   app.addEventListener("submit", function (event) {
+    if (event.target.id === "location-form") {
+      event.preventDefault();
+      submitLocation(event.target);
+      return;
+    }
     if (event.target.id === "sponsor-form") {
       event.preventDefault();
       submitSponsor(event.target);
@@ -4591,10 +4960,24 @@
   });
   var pendingPartnerRemove = null;
   var removePartnerDialog = document.getElementById("remove-partner-dialog");
-  function askPartnerRemove(title, copy, action) {
+  function saveLocationList(list, message) {
+    return api("/api/admin/locations", "PUT", { locations: list }).then(function (result) {
+      if (!result.ok) {
+        setStatus(result.data.error || "No se pudo guardar la sede.");
+        return result;
+      }
+      locations = result.data.locations || [];
+      setStatus(message || "");
+      render();
+      return result;
+    });
+  }
+
+  function askPartnerRemove(title, copy, action, note) {
     pendingPartnerRemove = action;
     document.getElementById("remove-partner-title").textContent = title;
     document.getElementById("remove-partner-copy").textContent = copy;
+    document.getElementById("remove-partner-note").textContent = note || "Esta acción quita el registro y su foto. No se puede deshacer.";
     removePartnerDialog.showModal();
   }
   document.getElementById("cancel-remove-partner").addEventListener("click", function () {

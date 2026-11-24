@@ -2,7 +2,7 @@
   var root = document.querySelector("[data-calendar]");
   if (!root) return;
 
-  var sessions = {
+  var fallbackSessions = {
     1: [
       { time: "8:00 p. m.", name: "Tiro de Esquina · Sur 2", place: "Cra 70 #13-90, Cali", href: "#sur-2", short: "Sur 2" }
     ],
@@ -14,6 +14,7 @@
       { time: "4:00 p. m.", name: "Tiro de Esquina · Sur 2", place: "Cra 70 #13-90, Cali", href: "#sur-2", short: "Sur 2" }
     ]
   };
+  var sessions = fallbackSessions;
 
   var months = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
   var weekdays = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
@@ -275,10 +276,41 @@
 
   render();
 
+  function applyLocations(list) {
+    var next = { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] };
+    list.forEach(function (place) {
+      var lines = String(place.address || "").split("\n").map(function (line) { return line.trim(); }).filter(Boolean);
+      var shortName = String(place.team || "").replace(/^Guerreras\s+/i, "").trim() || place.team;
+      (place.sessions || []).forEach(function (session) {
+        if (!next[session.day]) return;
+        next[session.day].push({
+          time: clock(session.time),
+          name: place.field + " · " + shortName,
+          place: lines.join(", "),
+          href: "#" + place.id,
+          short: shortName
+        });
+      });
+    });
+    sessions = next;
+  }
+
   fetch("/api/events", { cache: "no-store" })
     .then(function (response) { return response.ok ? response.json() : { events: [] }; })
     .then(function (data) {
       clubEvents = Array.isArray(data.events) ? data.events : [];
+      render();
+    })
+    .catch(function () {});
+
+  fetch("/api/locations", { cache: "no-store" })
+    .then(function (response) {
+      if (!response.ok) throw new Error("locations");
+      return response.json();
+    })
+    .then(function (data) {
+      if (!Array.isArray(data.locations)) return;
+      applyLocations(data.locations);
       render();
     })
     .catch(function () {});

@@ -3,6 +3,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const http = require("http");
+const https = require("https");
 const path = require("path");
 const { rowsFromWorkbook, rosterWorkbook } = require("./lib/sheet");
 const { base32Encode, totpMatches } = require("./lib/totp");
@@ -23,6 +24,7 @@ const BENEFITS_FILE = path.join(DATA, "benefits.json");
 const BENEFIT_MEDIA = path.join(DATA, "benefit-media");
 const SPONSORS_FILE = path.join(DATA, "sponsors.json");
 const SPONSOR_MEDIA = path.join(DATA, "sponsor-media");
+const LOCATIONS_FILE = path.join(DATA, "locations.json");
 const SESSION_MS = 8 * 60 * 60 * 1000;
 const IDLE_MS = 30 * 60 * 1000;
 const LOCK_MS = 15 * 60 * 1000;
@@ -585,6 +587,118 @@ function sponsorFilePath(id, file) {
 function storedSponsors() {
   const stored = readJson(SPONSORS_FILE, []);
   return Array.isArray(stored) ? stored : [];
+}
+
+function cleanAddress(value) {
+  return String(value == null ? "" : value)
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/[\u0000-\u0009\u000B\u000C\u000E-\u001F\u007F]/g, "")
+    .split("\n")
+    .map(function (line) { return line.replace(/[ \t]+/g, " ").trim(); })
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, 300);
+}
+
+function validSessions(list) {
+  if (list == null) return { sessions: [] };
+  if (!Array.isArray(list) || list.length > 21) return { error: "Revisa los horarios de entrenamiento." };
+  const sessions = [];
+  const seen = {};
+  for (let i = 0; i < list.length; i += 1) {
+    const item = list[i];
+    const day = Number(item && item.day);
+    const time = cleanText(item && item.time, 5);
+    if (!Number.isInteger(day) || day < 0 || day > 6 || !/^([01]\d|2[0-3]):[0-5]\d$/.test(time)) {
+      return { error: "Revisa el día y la hora de entrenamiento." };
+    }
+    const key = day + "-" + time;
+    if (seen[key]) return { error: "Ese día ya tiene ese horario." };
+    seen[key] = true;
+    sessions.push({ day: day, time: time });
+  }
+  return { sessions: sessions };
+}
+
+function validLocations(list) {
+  if (!Array.isArray(list) || list.length > 40) return { error: "No se pudieron guardar las sedes." };
+  const locations = [];
+  const seen = {};
+  for (let i = 0; i < list.length; i += 1) {
+    const item = list[i];
+    if (!item || typeof item !== "object") return { error: "No se pudieron guardar las sedes." };
+    const id = cleanText(item.id, 40);
+    const team = cleanText(item.team, 80);
+    const field = cleanText(item.field, 80);
+    const address = cleanAddress(item.address);
+    if (!ID.test(id) || seen[id]) return { error: "No se pudieron guardar las sedes." };
+    if (!team || !field || !address) return { error: "Escribe el nombre de la sede, la cancha y la dirección." };
+    const sessions = validSessions(item.sessions);
+    if (sessions.error) return sessions;
+    seen[id] = true;
+    locations.push({ id: id, team: team, field: field, address: address, sessions: sessions.sessions });
+  }
+  return { locations: locations };
+}
+
+function storedLocations() {
+  const stored = readJson(LOCATIONS_FILE, []);
+  return Array.isArray(stored) ? stored : [];
+}
+
+function geocodeAddress(address) {
+  const query = encodeURIComponent(String(address || "").replace(/\n/g, ", "));
+  const requestUrl = "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=co&q=" + query;
+  return new Promise(function (resolve) {
+    const req = https.get(requestUrl, {
+      headers: {
+        "User-Agent": "GuerrerasFC/1.0 (sedes; https://github.com/oscarleon511/guerrerasFc)",
+        Accept: "application/json"
+      }
+    }, function (res) {
+      const chunks = [];
+      res.on("data", function (chunk) { chunks.push(chunk); });
+      res.on("end", function () {
+        if (res.statusCode !== 200) return resolve(null);
+        try {
+          const data = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+          const hit = Array.isArray(data) ? data[0] : null;
+          const lat = hit ? Number(hit.lat) : NaN;
+          const lng = hit ? Number(hit.lon) : NaN;
+          if (!Number.isFinite(lat) || !Number.isFinite(lng)) return resolve(null);
+          if (lat < -5 || lat > 13 || lng < -80 || lng > -66) return resolve(null);
+          resolve({ lat: Math.round(lat * 1000000) / 1000000, lng: Math.round(lng * 1000000) / 1000000 });
+        } catch (error) {
+          resolve(null);
+        }
+      });
+    });
+    req.on("error", function () { resolve(null); });
+    req.setTimeout(8000, function () {
+      req.destroy();
+      resolve(null);
+    });
+  });
+}
+
+async function locateLocations(list) {
+  const previous = {};
+  storedLocations().forEach(function (item) { previous[item.id] = item; });
+  const placed = [];
+  for (let i = 0; i < list.length; i += 1) {
+    const item = list[i];
+    const prior = previous[item.id];
+    const kept = prior && prior.address === item.address && Number.isFinite(Number(prior.lat)) && Number.isFinite(Number(prior.lng));
+    if (kept) {
+      placed.push(Object.assign({}, item, { lat: Number(prior.lat), lng: Number(prior.lng) }));
+      continue;
+    }
+    const point = await geocodeAddress(item.address);
+    if (!point) return { error: "No se pudo ubicar en el mapa: " + item.field + "." };
+    placed.push(Object.assign({}, item, point));
+  }
+  return { locations: placed };
 }
 
 function syncPartnerMedia(root, items, dirFor) {
@@ -1191,6 +1305,9 @@ async function handleApi(req, res, pathname) {
     if (!full || !fs.existsSync(full) || !fs.statSync(full).isFile()) return sendJson(res, 404, { error: "No encontrada." });
     return sendMedia(req, res, full, mediaType(file), "public, max-age=3600");
   }
+  if (req.method === "GET" && pathname === "/api/locations") {
+    return sendJson(res, 200, { locations: storedLocations() });
+  }
   if (req.method === "GET" && pathname === "/api/events") {
     const published = storedEvents().filter(function (item) { return item && item.published === true; }).map(function (item) {
       return {
@@ -1343,6 +1460,16 @@ async function handleApi(req, res, pathname) {
     if (!full) return sendJson(res, 400, { error: "No se pudo quitar la foto." });
     if (fs.existsSync(full) && fs.statSync(full).isFile()) fs.unlinkSync(full);
     return sendJson(res, 200, { ok: true });
+  }
+  if (req.method === "GET" && pathname === "/api/admin/locations") return sendJson(res, 200, { locations: storedLocations() });
+  if (req.method === "PUT" && pathname === "/api/admin/locations") {
+    const body = await readBody(req);
+    const locations = validLocations(body.locations);
+    if (locations.error) return sendJson(res, 400, { error: locations.error });
+    const placed = await locateLocations(locations.locations);
+    if (placed.error) return sendJson(res, 400, { error: placed.error });
+    writeJson(LOCATIONS_FILE, placed.locations);
+    return sendJson(res, 200, { locations: placed.locations });
   }
   if (req.method === "GET" && pathname === "/api/admin/events") return sendJson(res, 200, { events: storedEvents() });
   if (req.method === "PUT" && pathname === "/api/admin/events") {

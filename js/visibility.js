@@ -49,22 +49,6 @@
     main.innerHTML = '<div class="wrap"><p class="index">Guerreras FC</p><h1>Esta sección no está disponible</h1><p>El club ocultó esta parte del sitio.</p><p><a class="btn" href="index.html">Volver al inicio</a></p></div>';
   }
 
-  var host = location.hostname;
-  if (host === "localhost" || host === "127.0.0.1") {
-    fetch("api/session", { credentials: "same-origin" }).then(function (response) {
-      if (response.status !== 401 && response.status !== 200) return;
-      var legal = document.querySelector(".legal");
-      if (!legal || document.querySelector("[data-admin-link]")) return;
-      var line = document.createElement("p");
-      var link = document.createElement("a");
-      link.href = "GFCCaliAdmin";
-      link.setAttribute("data-admin-link", "");
-      link.textContent = "Administración";
-      line.appendChild(link);
-      legal.appendChild(line);
-    }).catch(function () {});
-  }
-
   fetch("data/site-settings.json", { cache: "no-store" })
     .then(function (response) { return response.ok ? response.json() : null; })
     .then(function (settings) {

@@ -2,7 +2,7 @@
   var mount = document.querySelector("[data-sede-map]");
   if (!mount) return;
 
-  var places = [
+  var fallback = [
     {
       id: "sur-1",
       zone: "Guerreras Sur 1",
@@ -40,6 +40,35 @@
       maps: "https://www.google.com/maps/search/?api=1&query=Cancha+Campo+Verde+Carrera+7U+93-171+Juanchito"
     }
   ];
+  var places = fallback.slice();
+
+  function asPlace(item) {
+    var lat = Number(item && item.lat);
+    var lng = Number(item && item.lng);
+    var lines = String(item && item.address || "").split("\n").map(function (line) { return line.trim(); }).filter(Boolean);
+    if (!item || !item.id || !Number.isFinite(lat) || !Number.isFinite(lng) || !lines.length) return null;
+    return {
+      id: String(item.id),
+      zone: String(item.team || ""),
+      name: String(item.field || ""),
+      lines: lines,
+      lat: lat,
+      lng: lng,
+      maps: "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent([item.field].concat(lines).join(", "))
+    };
+  }
+
+  function loadPlaces() {
+    return fetch("/api/locations", { cache: "no-store" })
+      .then(function (response) {
+        if (!response.ok) throw new Error("locations");
+        return response.json();
+      })
+      .then(function (data) {
+        places = Array.isArray(data.locations) ? data.locations.map(asPlace).filter(Boolean) : [];
+      })
+      .catch(function () { places = fallback.slice(); });
+  }
 
   var markers = {};
   var ready = null;
@@ -85,13 +114,17 @@
   }
 
   function showAll() {
-    if (!map) return;
+    if (!map || !places.length) return;
     map.invalidateSize();
-    map.fitBounds(places.map(function (place) { return [place.lat, place.lng]; }), {
-      paddingTopLeft: [40, 68],
-      paddingBottomRight: [40, 24],
-      animate: false
-    });
+    if (places.length === 1) {
+      map.setView([places[0].lat, places[0].lng], 15, { animate: false });
+    } else {
+      map.fitBounds(places.map(function (place) { return [place.lat, place.lng]; }), {
+        paddingTopLeft: [40, 68],
+        paddingBottomRight: [40, 24],
+        animate: false
+      });
+    }
     layoutPins();
   }
 
@@ -135,27 +168,50 @@
     marker.openPopup();
   }
 
+  function mapLimits() {
+    var lats = places.map(function (place) { return place.lat; });
+    var lngs = places.map(function (place) { return place.lng; });
+    var latSpan = Math.max.apply(null, lats) - Math.min.apply(null, lats);
+    var lngSpan = Math.max.apply(null, lngs) - Math.min.apply(null, lngs);
+    var latPad = Math.max(0.12, latSpan * 0.8);
+    var lngPad = Math.max(0.12, lngSpan * 0.8);
+    return {
+      minZoom: latSpan < 0.4 && lngSpan < 0.4 ? 11 : 6,
+      bounds: [
+        [Math.min.apply(null, lats) - latPad, Math.min.apply(null, lngs) - lngPad],
+        [Math.max.apply(null, lats) + latPad, Math.max.apply(null, lngs) + lngPad]
+      ]
+    };
+  }
+
   function start() {
     if (ready) return ready;
-    ready = new Promise(function (resolve, reject) {
-      if (window.L) {
-        resolve();
-        return;
-      }
-      var script = document.createElement("script");
-      script.src = "js/leaflet.js";
-      script.onload = function () { resolve(); };
-      script.onerror = reject;
-      document.body.appendChild(script);
+    ready = loadPlaces().then(function () {
+      return new Promise(function (resolve, reject) {
+        if (window.L) {
+          resolve();
+          return;
+        }
+        var script = document.createElement("script");
+        script.src = "js/leaflet.js";
+        script.onload = function () { resolve(); };
+        script.onerror = reject;
+        document.body.appendChild(script);
+      });
     }).then(function () {
       var status = mount.querySelector(".sede-map-status");
+      if (!places.length) {
+        if (status) status.textContent = "Todavía no hay sedes en el mapa.";
+        return;
+      }
       if (status) status.remove();
+      var limits = mapLimits();
       map = L.map(mount, {
         scrollWheelZoom: false,
         zoomControl: true,
-        minZoom: 11,
+        minZoom: limits.minZoom,
         maxZoom: 18,
-        maxBounds: [[3.30, -76.62], [3.56, -76.42]],
+        maxBounds: limits.bounds,
         maxBoundsViscosity: 0.85
       });
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -193,18 +249,17 @@
     start();
   }
 
-  var sedeIds = ["norte", "sur-1", "sur-2", "campo"];
-  if (sedeIds.indexOf(location.hash.replace("#", "")) !== -1) start();
+  if (/^#[a-zA-Z0-9_-]{1,40}$/.test(location.hash)) start();
 
   function openFromHash() {
     var id = location.hash.replace("#", "");
-    if (!markers[id] && sedeIds.indexOf(id) === -1) return;
-    start().then(function () { focusPlace(id); });
+    if (!/^[a-zA-Z0-9_-]{1,40}$/.test(id)) return;
+    start().then(function () { if (markers[id]) focusPlace(id); });
   }
 
   document.addEventListener("click", function (event) {
-    var link = event.target.closest("a[href='#norte'], a[href='#sur-1'], a[href='#sur-2'], a[href='#campo']");
-    if (!link) return;
+    var link = event.target.closest("a[href^='#']");
+    if (!link || link.getAttribute("href") === "#") return;
     openFromHash();
   });
 

@@ -1,0 +1,56 @@
+[
+  {
+    "id": "sur-1",
+    "team": "Guerreras Sur 1",
+    "field": "Cancha 5.11",
+    "address": "Cra 56 #12a-01\nCali, Valle del Cauca",
+    "sessions": [
+      {
+        "day": 2,
+        "time": "20:00"
+      },
+      {
+        "day": 6,
+        "time": "16:00"
+      }
+    ],
+    "lat": 3.405995,
+    "lng": -76.53663
+  },
+  {
+    "id": "sur-2",
+    "team": "Guerreras Sur 2",
+    "field": "Cancha Tiro de Esquina",
+    "address": "Cra 70 #13-90\nCali, Valle del Cauca",
+    "sessions": [
+      {
+        "day": 1,
+        "time": "20:00"
+      },
+      {
+        "day": 6,
+        "time": "16:00"
+      }
+    ],
+    "lat": 3.3929357,
+    "lng": -76.5377499
+  },
+  {
+    "id": "norte",
+    "team": "Guerreras Norte",
+    "field": "Cancha Wembley",
+    "address": "Calle 58 Norte con Avenida 3 Norte\nCali, Valle del Cauca",
+    "sessions": [],
+    "lat": 3.490045,
+    "lng": -76.521075
+  },
+  {
+    "id": "campo",
+    "team": "Guerreras Ciudad del Campo",
+    "field": "Cancha Campo Verde",
+    "address": "Cra 7U #93-171\nJuanchito, Valle del Cauca",
+    "sessions": [],
+    "lat": 3.452348,
+    "lng": -76.472938
+  }
+]
