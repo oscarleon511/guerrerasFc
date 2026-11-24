@@ -11,8 +11,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=44">
-  <link rel="stylesheet" href="css/admin.css?v=49">
+  <link rel="stylesheet" href="css/styles.css?v=48">
+  <link rel="stylesheet" href="css/admin.css?v=58">
 </head>
 <body class="admin-body">
   <main id="login" class="login-screen">
@@ -75,6 +75,16 @@
     <p>Todos los derechos reservados a Guerreras FC · Cali, Colombia - 2026</p>
     <p>Desarrollado por <a href="https://www.ovptek.com/" target="_blank" rel="noopener noreferrer">OvpTek</a></p>
   </footer>
+
+  <dialog id="remove-partner-dialog" class="password-dialog" aria-labelledby="remove-partner-title">
+    <h2 id="remove-partner-title">Quitar</h2>
+    <p id="remove-partner-copy"></p>
+    <p>Esta acción quita el registro y su foto. No se puede deshacer.</p>
+    <div class="admin-actions">
+      <button class="btn" type="button" id="confirm-remove-partner">Quitar</button>
+      <button class="btn btn-ghost" type="button" id="cancel-remove-partner">Cancelar</button>
+    </div>
+  </dialog>
 
   <dialog id="delete-player-dialog" class="password-dialog" aria-labelledby="delete-player-title">
     <h2 id="delete-player-title">Eliminar jugadora</h2>
@@ -199,6 +209,13 @@
     </div>
   </dialog>
 
-  <script src="js/admin.js?v=45"></script>
+  <dialog class="benefit-dialog" id="partner-photo-dialog" aria-label="Foto">
+    <button class="benefit-close" type="button" data-close-partner-photo aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </button>
+    <img alt="" data-partner-photo>
+  </dialog>
+
+  <script src="js/admin.js?v=59"></script>
 </body>
 </html>

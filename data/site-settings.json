@@ -24,5 +24,11 @@
     "eventos": {
       "visible": true
     }
+  },
+  "analytics": {
+    "googleId": "",
+    "googleOn": false,
+    "facebookId": "",
+    "facebookOn": false
   }
 }

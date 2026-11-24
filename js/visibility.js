@@ -67,6 +67,60 @@
 
   fetch("data/site-settings.json", { cache: "no-store" })
     .then(function (response) { return response.ok ? response.json() : null; })
-    .then(apply)
+    .then(function (settings) {
+      apply(settings);
+      installAnalytics(settings);
+    })
     .catch(function () {});
+
+  function validGoogleId(value) {
+    return /^G-[A-Z0-9]{4,16}$/.test(String(value || "").trim().toUpperCase());
+  }
+
+  function validPixelId(value) {
+    return /^\d{5,20}$/.test(String(value || "").replace(/\s+/g, ""));
+  }
+
+  function installGoogle(measurementId) {
+    if (window.gtag) return;
+    var id = String(measurementId).trim().toUpperCase();
+    var script = document.createElement("script");
+    script.async = true;
+    script.src = "https://www.googletagmanager.com/gtag/js?id=" + id;
+    document.head.appendChild(script);
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { window.dataLayer.push(arguments); };
+    window.gtag("js", new Date());
+    window.gtag("config", id);
+  }
+
+  function installFacebook(pixelId) {
+    if (window.fbq) return;
+    var pixel = String(pixelId).replace(/\s+/g, "");
+    var queue = function () {
+      if (queue.callMethod) queue.callMethod.apply(queue, arguments);
+      else queue.queue.push(arguments);
+    };
+    queue.push = queue;
+    queue.loaded = true;
+    queue.version = "2.0";
+    queue.queue = [];
+    window.fbq = queue;
+    if (!window._fbq) window._fbq = queue;
+    var script = document.createElement("script");
+    script.async = true;
+    script.src = "https://connect.facebook.net/en_US/fbevents.js";
+    var first = document.getElementsByTagName("script")[0];
+    if (first && first.parentNode) first.parentNode.insertBefore(script, first);
+    else document.head.appendChild(script);
+    window.fbq("init", pixel);
+    window.fbq("track", "PageView");
+  }
+
+  function installAnalytics(settings) {
+    var analytics = settings && settings.analytics;
+    if (!analytics) return;
+    if (analytics.googleOn === true && validGoogleId(analytics.googleId)) installGoogle(analytics.googleId);
+    if (analytics.facebookOn === true && validPixelId(analytics.facebookId)) installFacebook(analytics.facebookId);
+  }
 })();

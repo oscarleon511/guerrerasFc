@@ -776,6 +776,8 @@ h2 { margin: 0.2rem 0 0.6rem; font-size: clamp(1.75rem, 2.5vw, 2rem); color: var
 .price-row { grid-template-columns: repeat(4, 1fr); }
 .sponsor-grid { grid-template-columns: repeat(3, 1fr); }
 
+.logo-wall.is-empty { display: none; }
+
 .logo-wall {
   list-style: none;
   margin: 0;
@@ -855,6 +857,58 @@ h2 { margin: 0.2rem 0 0.6rem; font-size: clamp(1.75rem, 2.5vw, 2rem); color: var
 }
 
 .benefit-wall img { max-height: 9.5rem; }
+
+.benefit-tile { position: relative; }
+
+.benefit-hover {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.75rem;
+  background: rgba(14, 98, 114, 0.92);
+  color: var(--white);
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.benefit-tile:hover .benefit-hover,
+.benefit-tile:focus-within .benefit-hover {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .benefit-tile:hover .benefit-hover,
+  .benefit-tile:focus-within .benefit-hover {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
+.benefit-hover strong { font-size: 0.95rem; line-height: 1.3; }
+
+.benefit-hover a,
+.benefit-hover span {
+  color: var(--white);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.benefit-dialog-copy {
+  margin: 0.7rem 0 0;
+  text-align: center;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.benefit-dialog .btn { align-self: center; margin-top: 0.75rem; min-height: 2.6rem; }
 
 .benefit-dialog {
   display: none;

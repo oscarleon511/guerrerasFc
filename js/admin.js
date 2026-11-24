@@ -10,6 +10,20 @@
   var eventPreviewIndex = 0;
   var previewingSaved = "";
   var previewDismissed = false;
+  var benefits = [];
+  var benefitFormOpen = false;
+  var editingBenefit = "";
+  var benefitDraft = null;
+  var benefitUploadBusy = false;
+  var benefitFilters = { name: "", link: "", photo: "" };
+  var selectedBenefits = {};
+  var sponsors = [];
+  var sponsorFormOpen = false;
+  var editingSponsor = "";
+  var sponsorDraft = null;
+  var sponsorUploadBusy = false;
+  var sponsorFilters = { name: "", link: "", photo: "" };
+  var selectedSponsors = {};
   var eventNoteLimit = 10000;
   var editingPlayer = "";
   var rosterOpen = false;
@@ -20,6 +34,7 @@
   var rosterFilters = {};
   var rosterSort = { key: "", dir: "" };
   var dragColumn = "";
+  var dragPartner = null;
   var infoDraft = null;
 
   var totpEnabled = false;
@@ -230,19 +245,38 @@
     return "<article class=\"panel-card\"><p>" + escapeHtml(item.copy) + "</p><label class=\"switch\"><input type=\"checkbox\" data-visible=\"" + item.id + "\"" + (visible ? " checked" : "") + "><span class=\"switch-track\" aria-hidden=\"true\"></span><span>Visible en el menú y en la página</span></label></article>";
   }
 
-  function telemetryPanel(report) {
-    var max = 1;
-    report.pages.forEach(function (page) { if (page.count > max) max = page.count; });
-    var bars = report.pages.map(function (page) {
-      var width = Math.round((page.count / max) * 100);
-      return "<div><span>" + escapeHtml(page.label) + "</span><b><i style=\"width:" + width + "%\"></i></b><span>" + page.count + "</span></div>";
-    }).join("");
-    var recent = report.recent.length ? report.recent.map(function (visit) {
-      var when = new Date(visit.at).toLocaleString("es-CO", { timeZone: "America/Bogota", dateStyle: "medium", timeStyle: "short" });
-      var label = tabMeta(visit.path);
-      return "<li><span>" + escapeHtml(label ? label.label : visit.path) + "</span><span>" + escapeHtml(when) + "</span></li>";
-    }).join("") : "<li>Todavía no hay visitas.</li>";
-    return "<article class=\"panel-card\"><p>Visitas a las páginas públicas. No se guarda la dirección de quien entra.</p><div class=\"stat-row\"><article><strong>" + report.total + "</strong><span>Visitas guardadas</span></article><article><strong>" + report.today + "</strong><span>Hoy</span></article></div><div class=\"meter\">" + bars + "</div><ul class=\"visit-list\">" + recent + "</ul></article>";
+  function analyticsValue() {
+    var analytics = settings && settings.analytics ? settings.analytics : {};
+    return {
+      googleId: analytics.googleId || "",
+      googleOn: analytics.googleOn === true,
+      facebookId: analytics.facebookId || "",
+      facebookOn: analytics.facebookOn === true
+    };
+  }
+
+  function analyticsSettingsCard() {
+    var current = analyticsValue();
+    return "<article class=\"panel-card\"><form id=\"analytics-form\">" +
+      "<h2>Medición del sitio</h2>" +
+      "<p>Estos datos activan Google Analytics y el píxel de Facebook en las páginas públicas. Esta administración no se mide.</p>" +
+      "<section class=\"analytics-block\">" +
+      "<h3>Google Analytics</h3>" +
+      "<label class=\"switch\"><input type=\"checkbox\" name=\"googleOn\"" + (current.googleOn ? " checked" : "") + "><span class=\"switch-track\" aria-hidden=\"true\"></span><span>Activo en el sitio</span></label>" +
+      "<label class=\"field\" for=\"google-measurement-id\">ID de medición<input id=\"google-measurement-id\" name=\"googleId\" value=\"" + escapeHtml(current.googleId) + "\" placeholder=\"G-XXXXXXXXXX\" maxlength=\"18\" autocomplete=\"off\" spellcheck=\"false\"></label>" +
+      "<p class=\"field-hint\">En Google Analytics abre Administrar, luego Flujos de datos, y copia el ID de medición.</p>" +
+      "<p class=\"analytics-links\"><a class=\"btn btn-ghost\" href=\"https://analytics.google.com/\" target=\"_blank\" rel=\"noopener noreferrer\">Abrir Google Analytics</a></p>" +
+      "</section>" +
+      "<section class=\"analytics-block\">" +
+      "<h3>Píxel de Facebook</h3>" +
+      "<label class=\"switch\"><input type=\"checkbox\" name=\"facebookOn\"" + (current.facebookOn ? " checked" : "") + "><span class=\"switch-track\" aria-hidden=\"true\"></span><span>Activo en el sitio</span></label>" +
+      "<label class=\"field\" for=\"facebook-pixel-id\">ID del píxel<input id=\"facebook-pixel-id\" name=\"facebookId\" value=\"" + escapeHtml(current.facebookId) + "\" placeholder=\"123456789012345\" maxlength=\"20\" inputmode=\"numeric\" autocomplete=\"off\" spellcheck=\"false\"></label>" +
+      "<p class=\"field-hint\">En el Administrador de eventos abre el píxel y copia su identificador numérico.</p>" +
+      "<p class=\"analytics-links\"><a class=\"btn btn-ghost\" href=\"https://business.facebook.com/events_manager2\" target=\"_blank\" rel=\"noopener noreferrer\">Abrir el píxel de Facebook</a></p>" +
+      "</section>" +
+      "<p id=\"analytics-error\" class=\"form-error\" role=\"alert\" hidden></p>" +
+      "<div class=\"admin-actions\"><button class=\"btn\" type=\"submit\">Guardar medición</button></div>" +
+      "</form></article>";
   }
 
   function eventById(id) {
@@ -1603,7 +1637,778 @@
     }
   }
 
+  function benefitById(id) {
+    return benefits.filter(function (item) { return item.id === id; })[0] || null;
+  }
+
+  function benefitPhotoSrc(id, file) {
+    return "/api/admin/benefits/media?id=" + encodeURIComponent(id) + "&file=" + encodeURIComponent(file);
+  }
+
+  function releaseBenefitFile(id, file) {
+    if (!file) return Promise.resolve();
+    var saved = benefitById(id);
+    if (saved && saved.photo === file) return Promise.resolve();
+    return api("/api/admin/benefits/media/remove", "POST", { id: id, file: file });
+  }
+
+  function discardBenefitDraft() {
+    if (!benefitDraft) {
+      benefitFormOpen = false;
+      editingBenefit = "";
+      return;
+    }
+    var draft = benefitDraft;
+    var saved = benefitById(draft.id);
+    var extra = draft.photo && (!saved || saved.photo !== draft.photo) ? draft.photo : "";
+    benefitDraft = null;
+    benefitFormOpen = false;
+    editingBenefit = "";
+    if (extra) releaseBenefitFile(draft.id, extra);
+  }
+
+  var benefitSaveGen = 0;
+  var sponsorSaveGen = 0;
+
+  function saveBenefitList(list, message) {
+    captureBenefitEdits();
+    var gen = ++benefitSaveGen;
+    return api("/api/admin/benefits", "PUT", { benefits: list }).then(function (result) {
+      if (gen !== benefitSaveGen) return result;
+      if (result.ok) {
+        benefits = result.data.benefits || [];
+        rememberBenefits();
+        document.querySelectorAll("[data-benefit-name]").forEach(function (input) {
+          var item = benefitById(input.getAttribute("data-benefit-name"));
+          if (item && input.value !== item.name) {
+            item.name = input.value;
+            benefitSaved[item.id] = "";
+          }
+        });
+        document.querySelectorAll("[data-benefit-link]").forEach(function (input) {
+          var item = benefitById(input.getAttribute("data-benefit-link"));
+          if (item && input.value !== (item.link || "")) {
+            item.link = input.value;
+            benefitSaved[item.id] = "";
+          }
+        });
+        setStatus(message || "");
+      }
+      return result;
+    });
+  }
+
+  function benefitFormHtml() {
+    var current = editingBenefit ? benefitById(editingBenefit) : null;
+    var name = benefitDraft && benefitDraft.formName != null ? benefitDraft.formName : (current ? current.name : "");
+    var link = benefitDraft && benefitDraft.formLink != null ? benefitDraft.formLink : (current ? current.link : "");
+    var photo = editingBenefit
+      ? "<div class=\"wide\"><span class=\"field-label\">Foto</span><div id=\"benefit-photo-drop\" class=\"photo-drop\"><p>Suelta la foto aquí o elige un archivo.</p><p class=\"field-hint\">Una foto, en JPG, PNG o WebP.</p><button class=\"btn btn-ghost\" type=\"button\" id=\"benefit-photo-add\">Elegir foto</button><input id=\"benefit-photo-file\" type=\"file\" accept=\"image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp\" hidden></div><div id=\"benefit-photo-list\" class=\"photo-list\">" + benefitPhotoFigure() + "</div><p id=\"benefit-photo-status\" class=\"photo-status\" role=\"status\"></p></div>"
+      : "<div class=\"wide\"><span class=\"field-label\">Fotos</span><div id=\"benefit-photo-drop\" class=\"photo-drop\"><p>Suelta las fotos aquí o elige archivos.</p><p class=\"field-hint\">Cada foto agrega una fila oculta, con la imagen a la izquierda del nombre. Edita el nombre y el enlace en la fila. Lo escrito se conserva al agregar más fotos.</p><button class=\"btn btn-ghost\" type=\"button\" id=\"benefit-photo-add\">Elegir fotos</button><input id=\"benefit-photo-file\" type=\"file\" accept=\"image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp\" multiple hidden></div><p id=\"benefit-photo-status\" class=\"photo-status\" role=\"status\"></p></div>";
+    return "<form id=\"benefit-form\" class=\"form-grid\">" +
+      "<h2 class=\"wide\">" + (editingBenefit ? "Editar beneficio" : "Nuevo beneficio") + "</h2>" +
+      "<p id=\"benefit-error\" class=\"form-error wide\" role=\"alert\" hidden></p>" +
+      "<label class=\"field\">Nombre<input name=\"name\" required maxlength=\"80\" value=\"" + escapeHtml(name) + "\" placeholder=\"Nombre del beneficio\"></label>" +
+      "<label class=\"field\">Enlace<input name=\"link\" type=\"url\" maxlength=\"300\" value=\"" + escapeHtml(link) + "\" placeholder=\"https://\"></label>" +
+      photo +
+      "<div class=\"admin-actions wide\"><button class=\"btn\" type=\"submit\">" + (editingBenefit ? "Guardar beneficio" : "Agregar beneficio") + "</button><button class=\"btn btn-ghost\" type=\"button\" id=\"cancel-benefit\">Cancelar</button></div>" +
+      "</form>";
+  }
+
+  function benefitPhotoFigure() {
+    if (!benefitDraft || !benefitDraft.photo) return "";
+    return "<figure><img src=\"" + escapeHtml(benefitPhotoSrc(benefitDraft.id, benefitDraft.photo)) + "\" alt=\"\"><button type=\"button\" data-remove-benefit-photo>Quitar</button></figure>";
+  }
+
+  function paintBenefitPhoto() {
+    var list = document.getElementById("benefit-photo-list");
+    if (list) list.innerHTML = benefitPhotoFigure();
+  }
+
+  function visibleBenefits() {
+    var name = benefitFilters.name.trim().toLowerCase();
+    var link = benefitFilters.link.trim().toLowerCase();
+    return benefits.filter(function (item) {
+      if (name && item.name.toLowerCase().indexOf(name) === -1) return false;
+      if (link && String(item.link || "").toLowerCase().indexOf(link) === -1) return false;
+      if (benefitFilters.photo === "added" && !item.photo) return false;
+      if (benefitFilters.photo === "empty" && item.photo) return false;
+      return true;
+    });
+  }
+
+  function benefitFilterCell(label, key, control) {
+    var active = key === "photo" ? benefitFilters.photo !== "" : benefitFilters[key].trim() !== "";
+    return "<th" + (active ? " class=\"is-filtered\"" : "") + "><span>" + label + "</span>" + control + "</th>";
+  }
+
+  function benefitRows() {
+    var shown = visibleBenefits();
+    if (!benefits.length) return "<tr><td colspan=\"6\">Todavía no hay beneficios agregados.</td></tr>";
+    if (!shown.length) return "<tr><td colspan=\"6\">Ningún beneficio coincide con el filtro.</td></tr>";
+    return shown.map(function (item) {
+      var thumb = item.photo
+        ? "<button type=\"button\" class=\"benefit-thumb-btn\" data-preview-partner=\"" + escapeHtml(item.name) + "\" aria-label=\"Ver la foto de " + escapeHtml(item.name) + "\"><img class=\"benefit-row-photo\" src=\"" + escapeHtml(benefitPhotoSrc(item.id, item.photo)) + "\" alt=\"\"></button>"
+        : "<span class=\"benefit-row-photo is-empty\"></span>";
+      var photo = item.photo ? "Agregada" : "Sin agregar";
+      var toggle = item.visible === false ? "Mostrar" : "Ocultar";
+      var toggleClass = item.visible === false ? "btn is-show" : "btn btn-ghost";
+      var selected = selectedBenefits[item.id] ? " checked" : "";
+      var mover = "<span class=\"benefit-drag\" draggable=\"true\" data-drag-partner=\"benefit\" data-partner-id=\"" + escapeHtml(item.id) + "\" role=\"button\" tabindex=\"0\" title=\"Arrastrar para mover\" aria-label=\"Mover " + escapeHtml(item.name) + "\">" + dragIcon + "</span>";
+      return "<tr data-partner-row=\"benefit\" data-partner-id=\"" + escapeHtml(item.id) + "\"" + (selected ? " class=\"is-selected\"" : "") + "><td class=\"benefit-check\"><span class=\"benefit-check-tools\">" + mover + "<input type=\"checkbox\" data-select-benefit=\"" + escapeHtml(item.id) + "\" aria-label=\"Seleccionar " + escapeHtml(item.name) + "\"" + selected + "></span></td><td class=\"benefit-thumb\">" + thumb + "</td><td><input class=\"benefit-row-input\" data-benefit-name=\"" + escapeHtml(item.id) + "\" maxlength=\"80\" value=\"" + escapeHtml(item.name) + "\" aria-label=\"Nombre de " + escapeHtml(item.name) + "\"></td><td><input class=\"benefit-row-input\" data-benefit-link=\"" + escapeHtml(item.id) + "\" maxlength=\"300\" value=\"" + escapeHtml(item.link || "") + "\" placeholder=\"https://\" aria-label=\"Enlace de " + escapeHtml(item.name) + "\"></td><td>" + photo + "</td><td><div class=\"benefit-actions\">" +
+        "<button class=\"" + toggleClass + "\" type=\"button\" data-toggle-benefit=\"" + escapeHtml(item.id) + "\">" + toggle + "</button>" +
+        "<button class=\"btn btn-ghost\" type=\"button\" data-edit-benefit=\"" + escapeHtml(item.id) + "\">Editar</button>" +
+        "<button class=\"btn btn-ghost\" type=\"button\" data-remove-benefit=\"" + escapeHtml(item.id) + "\">Quitar</button>" +
+        "</div></td></tr>";
+    }).join("");
+  }
+
+  function syncSelectionButtons(prefix, items, selected) {
+    var chosen = items.filter(function (item) { return selected[item.id]; });
+    var hidden = chosen.filter(function (item) { return item.visible === false; }).length;
+    [["show", hidden, "Mostrar seleccionados"], ["hide", chosen.length - hidden, "Ocultar seleccionados"], ["delete", chosen.length, "Quitar seleccionados"]].forEach(function (entry) {
+      var button = document.getElementById(prefix + "-bulk-" + entry[0]);
+      if (!button) return;
+      button.disabled = entry[1] === 0;
+      button.textContent = entry[1] ? entry[2] + " (" + entry[1] + ")" : entry[2];
+    });
+  }
+
+  function applyPartnerVisibility(kind, visible) {
+    var source = kind === "sponsor" ? sponsors : benefits;
+    var selected = kind === "sponsor" ? selectedSponsors : selectedBenefits;
+    var changed = 0;
+    var next = source.map(function (item) {
+      if (!selected[item.id] || (item.visible !== false) === visible) return item;
+      changed += 1;
+      var copy = {};
+      Object.keys(item).forEach(function (key) { copy[key] = item[key]; });
+      copy.visible = visible;
+      return copy;
+    });
+    if (!changed) return;
+    var message = kind === "sponsor"
+      ? (visible
+        ? (changed === 1 ? "El patrocinador quedó visible." : "Los patrocinadores quedaron visibles.")
+        : (changed === 1 ? "El patrocinador quedó oculto." : "Los patrocinadores quedaron ocultos."))
+      : (visible
+        ? (changed === 1 ? "El beneficio quedó visible." : "Los beneficios quedaron visibles.")
+        : (changed === 1 ? "El beneficio quedó oculto." : "Los beneficios quedaron ocultos."));
+    var done = function (result) {
+      if (!result.ok) setStatus(result.data.error || "No se pudo guardar.");
+      else if (kind === "sponsor") paintSponsorRows();
+      else paintBenefitRows();
+    };
+    if (kind === "sponsor") {
+      sponsors = next;
+      saveSponsorList(sponsors, message).then(done);
+    } else {
+      benefits = next;
+      saveBenefitList(benefits, message).then(done);
+    }
+  }
+
+  function syncBenefitSelection() {
+    var shown = visibleBenefits();
+    var shownSelected = shown.filter(function (item) { return selectedBenefits[item.id]; }).length;
+    syncSelectionButtons("benefit", benefits, selectedBenefits);
+    var all = document.getElementById("benefit-select-all");
+    if (all) {
+      all.checked = shown.length > 0 && shownSelected === shown.length;
+      all.indeterminate = shownSelected > 0 && shownSelected < shown.length;
+    }
+  }
+
+  function paintBenefitRows() {
+    captureBenefitEdits();
+    var body = document.querySelector(".benefit-table tbody");
+    if (!body) return;
+    body.innerHTML = benefitRows();
+    syncBenefitSelection();
+  }
+
+  function benefitsPanel() {
+    var page = siteTabs.filter(function (item) { return item.id === "beneficios"; })[0];
+    var nameFilter = "<input class=\"roster-filter\" data-benefit-filter=\"name\" type=\"search\" placeholder=\"Filtrar\" aria-label=\"Filtrar nombre\" value=\"" + escapeHtml(benefitFilters.name) + "\">";
+    var linkFilter = "<input class=\"roster-filter\" data-benefit-filter=\"link\" type=\"search\" placeholder=\"Filtrar\" aria-label=\"Filtrar enlace\" value=\"" + escapeHtml(benefitFilters.link) + "\">";
+    var photoFilter = "<select class=\"roster-filter\" data-benefit-filter=\"photo\" aria-label=\"Filtrar foto\"><option value=\"\">Todas</option><option value=\"added\"" + (benefitFilters.photo === "added" ? " selected" : "") + ">Agregada</option><option value=\"empty\"" + (benefitFilters.photo === "empty" ? " selected" : "") + ">Sin agregar</option></select>";
+    return sitePanel(page) +
+      "<article class=\"panel-card benefits-admin\"><div class=\"admin-actions\"><button class=\"btn\" type=\"button\" id=\"add-benefit\"" + (benefitFormOpen ? " hidden" : "") + ">Agregar beneficio</button></div>" +
+      (benefitFormOpen ? benefitFormHtml() : "") +
+      "<div class=\"admin-actions benefit-bulk\"><button class=\"btn is-show\" type=\"button\" id=\"benefit-bulk-show\" disabled>Mostrar seleccionados</button><button class=\"btn btn-ghost\" type=\"button\" id=\"benefit-bulk-hide\" disabled>Ocultar seleccionados</button><button class=\"btn btn-ghost\" type=\"button\" id=\"benefit-bulk-delete\" disabled>Quitar seleccionados</button></div>" +
+      "<div class=\"benefit-table-wrap\"><table class=\"benefit-table\"><thead><tr><th class=\"benefit-check\"><input type=\"checkbox\" id=\"benefit-select-all\" aria-label=\"Seleccionar los beneficios visibles\"></th><th class=\"benefit-thumb\"><span class=\"sr-only\">Imagen</span></th>" +
+      benefitFilterCell("Nombre", "name", nameFilter) +
+      benefitFilterCell("Enlace", "link", linkFilter) +
+      benefitFilterCell("Foto", "photo", photoFilter) +
+      "<th>Acciones</th></tr></thead><tbody>" + benefitRows() + "</tbody></table></div></article>";
+  }
+
+  function openBenefitForm(id) {
+    var current = id ? benefitById(id) : null;
+    if (id && !current) return;
+    discardBenefitDraft();
+    benefitFormOpen = true;
+    editingBenefit = id || "";
+    benefitDraft = {
+      id: current ? current.id : "b-" + Date.now().toString(36),
+      photo: current ? current.photo || "" : "",
+      fresh: !current,
+      formName: current ? current.name : "",
+      formLink: current ? current.link : ""
+    };
+    render();
+    var form = document.getElementById("benefit-form");
+    if (form) form.scrollIntoView({ block: "nearest" });
+  }
+
+  function setBenefitError(message) {
+    var error = document.getElementById("benefit-error");
+    if (!error) return;
+    error.hidden = !message;
+    error.textContent = message || "";
+  }
+
+  function setBenefitPhotoStatus(message) {
+    var status = document.getElementById("benefit-photo-status");
+    if (status) status.textContent = message || "";
+  }
+
+  function addBenefitPhoto(file) {
+    if (!benefitDraft || benefitUploadBusy || !file) return;
+    if (!acceptedPhoto(file)) {
+      setBenefitPhotoStatus("La foto debe ser JPG, PNG o WebP.");
+      return;
+    }
+    var id = benefitDraft.id;
+    var previous = benefitDraft.photo;
+    benefitUploadBusy = true;
+    setBenefitPhotoStatus("Subiendo foto…");
+    readPhotoFile(file).then(function (data) {
+      var payload = data.indexOf(",") >= 0 ? data.split(",")[1] : data;
+      return api("/api/admin/benefits/photo", "POST", { id: id, data: payload });
+    }).then(function (result) {
+      if (!result.ok) throw new Error((result.data && result.data.error) || "No se pudo guardar la foto.");
+      if (!benefitDraft || benefitDraft.id !== id) return releaseBenefitFile(id, result.data.file);
+      benefitDraft.photo = result.data.file;
+      paintBenefitPhoto();
+      setBenefitPhotoStatus("Foto lista. Guarda el beneficio para publicarla.");
+      if (previous && previous !== result.data.file) return releaseBenefitFile(id, previous);
+    }).catch(function (error) {
+      setBenefitPhotoStatus(error.message || "La foto no se pudo leer.");
+    }).then(function () {
+      benefitUploadBusy = false;
+    });
+  }
+
+  function pictureName(file) {
+    var base = String(file && file.name || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").replace(/\s+/g, " ").trim();
+    return base.slice(0, 80) || "Sin nombre";
+  }
+
+  function partnerId(prefix, index) {
+    return prefix + Date.now().toString(36) + index.toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+
+  function uploadPartnerPhoto(path, id, file) {
+    return readPhotoFile(file).then(function (data) {
+      var payload = data.indexOf(",") >= 0 ? data.split(",")[1] : data;
+      return api(path, "POST", { id: id, data: payload });
+    });
+  }
+
+  var benefitSaved = {};
+  var sponsorSaved = {};
+
+  function rememberBenefits() {
+    benefitSaved = {};
+    benefits.forEach(function (item) {
+      benefitSaved[item.id] = item.name + "\n" + (item.link || "");
+    });
+  }
+
+  function rememberSponsors() {
+    sponsorSaved = {};
+    sponsors.forEach(function (item) {
+      sponsorSaved[item.id] = item.name + "\n" + (item.link || "");
+    });
+  }
+
+  function captureBenefitEdits() {
+    var form = document.getElementById("benefit-form");
+    if (form && benefitDraft) {
+      if (form.name) benefitDraft.formName = form.name.value;
+      if (form.link) benefitDraft.formLink = form.link.value;
+    }
+    document.querySelectorAll("[data-benefit-name]").forEach(function (input) {
+      var item = benefitById(input.getAttribute("data-benefit-name"));
+      if (item) item.name = input.value;
+    });
+    document.querySelectorAll("[data-benefit-link]").forEach(function (input) {
+      var item = benefitById(input.getAttribute("data-benefit-link"));
+      if (item) item.link = input.value;
+    });
+  }
+
+  function captureSponsorEdits() {
+    var form = document.getElementById("sponsor-form");
+    if (form && sponsorDraft) {
+      if (form.name) sponsorDraft.formName = form.name.value;
+      if (form.link) sponsorDraft.formLink = form.link.value;
+    }
+    document.querySelectorAll("[data-sponsor-name]").forEach(function (input) {
+      var item = sponsorById(input.getAttribute("data-sponsor-name"));
+      if (item) item.name = input.value;
+    });
+    document.querySelectorAll("[data-sponsor-link]").forEach(function (input) {
+      var item = sponsorById(input.getAttribute("data-sponsor-link"));
+      if (item) item.link = input.value;
+    });
+  }
+
+  function addBenefitPhotos(files) {
+    var accepted = [];
+    Array.prototype.forEach.call(files || [], function (file) {
+      if (acceptedPhoto(file)) accepted.push(file);
+    });
+    if (!accepted.length) {
+      setBenefitPhotoStatus("Las fotos deben ser JPG, PNG o WebP.");
+      return;
+    }
+    if (editingBenefit) {
+      addBenefitPhoto(accepted[0]);
+      if (accepted.length > 1) setBenefitPhotoStatus("En la edición solo se cambia una foto.");
+      return;
+    }
+    var room = 80 - benefits.length;
+    if (room <= 0) {
+      setBenefitPhotoStatus("Ya hay 80 beneficios.");
+      return;
+    }
+    if (accepted.length > room) accepted = accepted.slice(0, room);
+    captureBenefitEdits();
+    benefitUploadBusy = true;
+    setBenefitPhotoStatus("Subiendo fotos…");
+    var created = [];
+    var chain = Promise.resolve();
+    accepted.forEach(function (file, index) {
+      chain = chain.then(function () {
+        var id = partnerId("b-", index);
+        return uploadPartnerPhoto("/api/admin/benefits/photo", id, file).then(function (result) {
+          if (!result.ok) throw new Error((result.data && result.data.error) || "No se pudo guardar la foto.");
+          created.push({
+            id: id,
+            name: pictureName(file),
+            link: "",
+            photo: result.data.file,
+            visible: false
+          });
+        });
+      });
+    });
+    chain.then(function () {
+      benefitFilters = { name: "", link: "", photo: "" };
+      benefits = benefits.concat(created);
+      return saveBenefitList(benefits, created.length === 1 ? "Se agregó 1 beneficio oculto." : "Se agregaron " + created.length + " beneficios ocultos.");
+    }).then(function (result) {
+      if (!result || !result.ok) {
+        var failedBenefits = {};
+        created.forEach(function (item) {
+          failedBenefits[item.id] = true;
+          releaseBenefitFile(item.id, item.photo);
+        });
+        benefits = benefits.filter(function (item) { return !failedBenefits[item.id]; });
+        setBenefitPhotoStatus((result && result.data && result.data.error) || "No se pudo guardar.");
+        return;
+      }
+      paintBenefitRows();
+      setBenefitPhotoStatus(created.length === 1 ? "Se agregó una fila oculta. Edita el nombre y el enlace." : "Se agregaron " + created.length + " filas ocultas. Edita el nombre y el enlace en cada fila.");
+    }).catch(function (error) {
+      var failedBenefits = {};
+      created.forEach(function (item) {
+        failedBenefits[item.id] = true;
+        releaseBenefitFile(item.id, item.photo);
+      });
+      benefits = benefits.filter(function (item) { return !failedBenefits[item.id]; });
+      setBenefitPhotoStatus(error.message || "No se pudo guardar la foto.");
+    }).then(function () {
+      benefitUploadBusy = false;
+    });
+  }
+
+  function submitBenefit(form) {
+    if (!benefitDraft) return;
+    if (benefitUploadBusy) {
+      setBenefitError("Espera a que termine la foto.");
+      return;
+    }
+    var name = String(new FormData(form).get("name") || "").trim();
+    var link = String(new FormData(form).get("link") || "").trim();
+    if (!name) return setBenefitError("Escribe el nombre del beneficio.");
+    if (link && !/^https?:\/\//i.test(link)) return setBenefitError("El enlace debe empezar por https://.");
+    var existing = benefitById(benefitDraft.id);
+    var next = {
+      id: benefitDraft.id,
+      name: name,
+      link: link,
+      photo: benefitDraft.photo || "",
+      visible: existing ? existing.visible !== false : true
+    };
+    var list = [];
+    var placed = false;
+    benefits.forEach(function (item) {
+      if (item.id === next.id) {
+        list.push(next);
+        placed = true;
+      } else list.push(item);
+    });
+    if (!placed) list.push(next);
+    var button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    setBenefitError("");
+    benefits = list;
+    saveBenefitList(benefits, existing ? "Beneficio actualizado." : "Beneficio agregado.").then(function (result) {
+      button.disabled = false;
+      if (!result.ok) return setBenefitError(result.data.error || "No se pudo guardar.");
+      benefitDraft = null;
+      benefitFormOpen = false;
+      editingBenefit = "";
+      render();
+    }).catch(function () {
+      button.disabled = false;
+      setBenefitError("No se pudo guardar.");
+    });
+  }
+
+  function sponsorById(id) {
+    return sponsors.filter(function (item) { return item.id === id; })[0] || null;
+  }
+
+  function sponsorPhotoSrc(id, file) {
+    return "/api/admin/sponsors/media?id=" + encodeURIComponent(id) + "&file=" + encodeURIComponent(file);
+  }
+
+  function releaseSponsorFile(id, file) {
+    if (!file) return Promise.resolve();
+    var saved = sponsorById(id);
+    if (saved && saved.photo === file) return Promise.resolve();
+    return api("/api/admin/sponsors/media/remove", "POST", { id: id, file: file });
+  }
+
+  function discardSponsorDraft() {
+    if (!sponsorDraft) {
+      sponsorFormOpen = false;
+      editingSponsor = "";
+      return;
+    }
+    var draft = sponsorDraft;
+    var saved = sponsorById(draft.id);
+    var extra = draft.photo && (!saved || saved.photo !== draft.photo) ? draft.photo : "";
+    sponsorDraft = null;
+    sponsorFormOpen = false;
+    editingSponsor = "";
+    if (extra) releaseSponsorFile(draft.id, extra);
+  }
+
+  function saveSponsorList(list, message) {
+    captureSponsorEdits();
+    var gen = ++sponsorSaveGen;
+    return api("/api/admin/sponsors", "PUT", { sponsors: list }).then(function (result) {
+      if (gen !== sponsorSaveGen) return result;
+      if (result.ok) {
+        sponsors = result.data.sponsors || [];
+        rememberSponsors();
+        document.querySelectorAll("[data-sponsor-name]").forEach(function (input) {
+          var item = sponsorById(input.getAttribute("data-sponsor-name"));
+          if (item && input.value !== item.name) {
+            item.name = input.value;
+            sponsorSaved[item.id] = "";
+          }
+        });
+        document.querySelectorAll("[data-sponsor-link]").forEach(function (input) {
+          var item = sponsorById(input.getAttribute("data-sponsor-link"));
+          if (item && input.value !== (item.link || "")) {
+            item.link = input.value;
+            sponsorSaved[item.id] = "";
+          }
+        });
+        setStatus(message || "");
+      }
+      return result;
+    });
+  }
+
+  function sponsorPhotoFigure() {
+    if (!sponsorDraft || !sponsorDraft.photo) return "";
+    return "<figure><img src=\"" + escapeHtml(sponsorPhotoSrc(sponsorDraft.id, sponsorDraft.photo)) + "\" alt=\"\"><button type=\"button\" data-remove-sponsor-photo>Quitar</button></figure>";
+  }
+
+  function sponsorFormHtml() {
+    var current = editingSponsor ? sponsorById(editingSponsor) : null;
+    var name = sponsorDraft && sponsorDraft.formName != null ? sponsorDraft.formName : (current ? current.name : "");
+    var link = sponsorDraft && sponsorDraft.formLink != null ? sponsorDraft.formLink : (current ? current.link : "");
+    var photo = editingSponsor
+      ? "<div class=\"wide\"><span class=\"field-label\">Foto</span><div id=\"sponsor-photo-drop\" class=\"photo-drop\"><p>Suelta el logotipo aquí o elige un archivo.</p><p class=\"field-hint\">Una foto, en JPG, PNG o WebP.</p><button class=\"btn btn-ghost\" type=\"button\" id=\"sponsor-photo-add\">Elegir foto</button><input id=\"sponsor-photo-file\" type=\"file\" accept=\"image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp\" hidden></div><div id=\"sponsor-photo-list\" class=\"photo-list\">" + sponsorPhotoFigure() + "</div><p id=\"sponsor-photo-status\" class=\"photo-status\" role=\"status\"></p></div>"
+      : "<div class=\"wide\"><span class=\"field-label\">Fotos</span><div id=\"sponsor-photo-drop\" class=\"photo-drop\"><p>Suelta las fotos aquí o elige archivos.</p><p class=\"field-hint\">Cada foto agrega una fila oculta, con la imagen a la izquierda del nombre. Edita el nombre y el enlace en la fila. Lo escrito se conserva al agregar más fotos.</p><button class=\"btn btn-ghost\" type=\"button\" id=\"sponsor-photo-add\">Elegir fotos</button><input id=\"sponsor-photo-file\" type=\"file\" accept=\"image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp\" multiple hidden></div><p id=\"sponsor-photo-status\" class=\"photo-status\" role=\"status\"></p></div>";
+    return "<form id=\"sponsor-form\" class=\"form-grid\">" +
+      "<h2 class=\"wide\">" + (editingSponsor ? "Editar patrocinador" : "Nuevo patrocinador") + "</h2>" +
+      "<p id=\"sponsor-error\" class=\"form-error wide\" role=\"alert\" hidden></p>" +
+      "<label class=\"field\">Nombre<input name=\"name\" required maxlength=\"80\" value=\"" + escapeHtml(name) + "\" placeholder=\"Nombre del patrocinador\"></label>" +
+      "<label class=\"field\">Enlace<input name=\"link\" type=\"url\" maxlength=\"300\" value=\"" + escapeHtml(link) + "\" placeholder=\"https://\"></label>" +
+      photo +
+      "<div class=\"admin-actions wide\"><button class=\"btn\" type=\"submit\">" + (editingSponsor ? "Guardar patrocinador" : "Agregar patrocinador") + "</button><button class=\"btn btn-ghost\" type=\"button\" id=\"cancel-sponsor\">Cancelar</button></div>" +
+      "</form>";
+  }
+
+  function paintSponsorPhoto() {
+    var list = document.getElementById("sponsor-photo-list");
+    if (list) list.innerHTML = sponsorPhotoFigure();
+  }
+
+  function visibleSponsors() {
+    var name = sponsorFilters.name.trim().toLowerCase();
+    var link = sponsorFilters.link.trim().toLowerCase();
+    return sponsors.filter(function (item) {
+      if (name && item.name.toLowerCase().indexOf(name) === -1) return false;
+      if (link && String(item.link || "").toLowerCase().indexOf(link) === -1) return false;
+      if (sponsorFilters.photo === "added" && !item.photo) return false;
+      if (sponsorFilters.photo === "empty" && item.photo) return false;
+      return true;
+    });
+  }
+
+  function sponsorRows() {
+    var shown = visibleSponsors();
+    if (!sponsors.length) return "<tr><td colspan=\"6\">Todavía no hay patrocinadores agregados.</td></tr>";
+    if (!shown.length) return "<tr><td colspan=\"6\">Ningún patrocinador coincide con el filtro.</td></tr>";
+    return shown.map(function (item) {
+      var thumb = item.photo
+        ? "<button type=\"button\" class=\"benefit-thumb-btn\" data-preview-partner=\"" + escapeHtml(item.name) + "\" aria-label=\"Ver la foto de " + escapeHtml(item.name) + "\"><img class=\"benefit-row-photo\" src=\"" + escapeHtml(sponsorPhotoSrc(item.id, item.photo)) + "\" alt=\"\"></button>"
+        : "<span class=\"benefit-row-photo is-empty\"></span>";
+      var photo = item.photo ? "Agregada" : "Sin agregar";
+      var toggle = item.visible === false ? "Mostrar" : "Ocultar";
+      var toggleClass = item.visible === false ? "btn is-show" : "btn btn-ghost";
+      var selected = selectedSponsors[item.id] ? " checked" : "";
+      var mover = "<span class=\"benefit-drag\" draggable=\"true\" data-drag-partner=\"sponsor\" data-partner-id=\"" + escapeHtml(item.id) + "\" role=\"button\" tabindex=\"0\" title=\"Arrastrar para mover\" aria-label=\"Mover " + escapeHtml(item.name) + "\">" + dragIcon + "</span>";
+      return "<tr data-partner-row=\"sponsor\" data-partner-id=\"" + escapeHtml(item.id) + "\"" + (selected ? " class=\"is-selected\"" : "") + "><td class=\"benefit-check\"><span class=\"benefit-check-tools\">" + mover + "<input type=\"checkbox\" data-select-sponsor=\"" + escapeHtml(item.id) + "\" aria-label=\"Seleccionar " + escapeHtml(item.name) + "\"" + selected + "></span></td><td class=\"benefit-thumb\">" + thumb + "</td><td><input class=\"benefit-row-input\" data-sponsor-name=\"" + escapeHtml(item.id) + "\" maxlength=\"80\" value=\"" + escapeHtml(item.name) + "\" aria-label=\"Nombre de " + escapeHtml(item.name) + "\"></td><td><input class=\"benefit-row-input\" data-sponsor-link=\"" + escapeHtml(item.id) + "\" maxlength=\"300\" value=\"" + escapeHtml(item.link || "") + "\" placeholder=\"https://\" aria-label=\"Enlace de " + escapeHtml(item.name) + "\"></td><td>" + photo + "</td><td><div class=\"benefit-actions\">" +
+        "<button class=\"" + toggleClass + "\" type=\"button\" data-toggle-sponsor=\"" + escapeHtml(item.id) + "\">" + toggle + "</button>" +
+        "<button class=\"btn btn-ghost\" type=\"button\" data-edit-sponsor=\"" + escapeHtml(item.id) + "\">Editar</button>" +
+        "<button class=\"btn btn-ghost\" type=\"button\" data-remove-sponsor=\"" + escapeHtml(item.id) + "\">Quitar</button>" +
+        "</div></td></tr>";
+    }).join("");
+  }
+
+  function syncSponsorSelection() {
+    var shown = visibleSponsors();
+    var shownSelected = shown.filter(function (item) { return selectedSponsors[item.id]; }).length;
+    syncSelectionButtons("sponsor", sponsors, selectedSponsors);
+    var all = document.getElementById("sponsor-select-all");
+    if (all) {
+      all.checked = shown.length > 0 && shownSelected === shown.length;
+      all.indeterminate = shownSelected > 0 && shownSelected < shown.length;
+    }
+  }
+
+  function paintSponsorRows() {
+    captureSponsorEdits();
+    var body = document.querySelector(".sponsor-table tbody");
+    if (!body) return;
+    body.innerHTML = sponsorRows();
+    syncSponsorSelection();
+  }
+
+  function sponsorsPanel() {
+    var page = siteTabs.filter(function (item) { return item.id === "patrocinadores"; })[0];
+    var nameOn = sponsorFilters.name.trim() !== "";
+    var linkOn = sponsorFilters.link.trim() !== "";
+    var photoOn = sponsorFilters.photo !== "";
+    var nameFilter = "<input class=\"roster-filter\" data-sponsor-filter=\"name\" type=\"search\" placeholder=\"Filtrar\" aria-label=\"Filtrar nombre\" value=\"" + escapeHtml(sponsorFilters.name) + "\">";
+    var linkFilter = "<input class=\"roster-filter\" data-sponsor-filter=\"link\" type=\"search\" placeholder=\"Filtrar\" aria-label=\"Filtrar enlace\" value=\"" + escapeHtml(sponsorFilters.link) + "\">";
+    var photoFilter = "<select class=\"roster-filter\" data-sponsor-filter=\"photo\" aria-label=\"Filtrar foto\"><option value=\"\">Todas</option><option value=\"added\"" + (sponsorFilters.photo === "added" ? " selected" : "") + ">Agregada</option><option value=\"empty\"" + (sponsorFilters.photo === "empty" ? " selected" : "") + ">Sin agregar</option></select>";
+    return sitePanel(page) +
+      "<article class=\"panel-card benefits-admin sponsor-admin\"><div class=\"admin-actions\"><button class=\"btn\" type=\"button\" id=\"add-sponsor\"" + (sponsorFormOpen ? " hidden" : "") + ">Agregar patrocinador</button></div>" +
+      (sponsorFormOpen ? sponsorFormHtml() : "") +
+      "<div class=\"admin-actions benefit-bulk\"><button class=\"btn is-show\" type=\"button\" id=\"sponsor-bulk-show\" disabled>Mostrar seleccionados</button><button class=\"btn btn-ghost\" type=\"button\" id=\"sponsor-bulk-hide\" disabled>Ocultar seleccionados</button><button class=\"btn btn-ghost\" type=\"button\" id=\"sponsor-bulk-delete\" disabled>Quitar seleccionados</button></div>" +
+      "<div class=\"benefit-table-wrap\"><table class=\"benefit-table sponsor-table\"><thead><tr><th class=\"benefit-check\"><input type=\"checkbox\" id=\"sponsor-select-all\" aria-label=\"Seleccionar los patrocinadores visibles\"></th><th class=\"benefit-thumb\"><span class=\"sr-only\">Imagen</span></th>" +
+      "<th" + (nameOn ? " class=\"is-filtered\"" : "") + "><span>Nombre</span>" + nameFilter + "</th>" +
+      "<th" + (linkOn ? " class=\"is-filtered\"" : "") + "><span>Enlace</span>" + linkFilter + "</th>" +
+      "<th" + (photoOn ? " class=\"is-filtered\"" : "") + "><span>Foto</span>" + photoFilter + "</th>" +
+      "<th>Acciones</th></tr></thead><tbody>" + sponsorRows() + "</tbody></table></div></article>";
+  }
+
+  function openSponsorForm(id) {
+    var current = id ? sponsorById(id) : null;
+    if (id && !current) return;
+    discardSponsorDraft();
+    sponsorFormOpen = true;
+    editingSponsor = id || "";
+    sponsorDraft = {
+      id: current ? current.id : "s-" + Date.now().toString(36),
+      photo: current ? current.photo || "" : "",
+      fresh: !current,
+      formName: current ? current.name : "",
+      formLink: current ? current.link : ""
+    };
+    render();
+    var form = document.getElementById("sponsor-form");
+    if (form) form.scrollIntoView({ block: "nearest" });
+  }
+
+  function setSponsorError(message) {
+    var error = document.getElementById("sponsor-error");
+    if (!error) return;
+    error.hidden = !message;
+    error.textContent = message || "";
+  }
+
+  function setSponsorPhotoStatus(message) {
+    var status = document.getElementById("sponsor-photo-status");
+    if (status) status.textContent = message || "";
+  }
+
+  function addSponsorPhoto(file) {
+    if (!sponsorDraft || sponsorUploadBusy || !file) return;
+    if (!acceptedPhoto(file)) {
+      setSponsorPhotoStatus("La foto debe ser JPG, PNG o WebP.");
+      return;
+    }
+    var id = sponsorDraft.id;
+    var previous = sponsorDraft.photo;
+    sponsorUploadBusy = true;
+    setSponsorPhotoStatus("Subiendo foto…");
+    readPhotoFile(file).then(function (data) {
+      var payload = data.indexOf(",") >= 0 ? data.split(",")[1] : data;
+      return api("/api/admin/sponsors/photo", "POST", { id: id, data: payload });
+    }).then(function (result) {
+      if (!result.ok) throw new Error((result.data && result.data.error) || "No se pudo guardar la foto.");
+      if (!sponsorDraft || sponsorDraft.id !== id) return releaseSponsorFile(id, result.data.file);
+      sponsorDraft.photo = result.data.file;
+      paintSponsorPhoto();
+      setSponsorPhotoStatus("Foto lista. Guarda el patrocinador para publicarla.");
+      if (previous && previous !== result.data.file) return releaseSponsorFile(id, previous);
+    }).catch(function (error) {
+      setSponsorPhotoStatus(error.message || "La foto no se pudo leer.");
+    }).then(function () {
+      sponsorUploadBusy = false;
+    });
+  }
+
+  function addSponsorPhotos(files) {
+    var accepted = [];
+    Array.prototype.forEach.call(files || [], function (file) {
+      if (acceptedPhoto(file)) accepted.push(file);
+    });
+    if (!accepted.length) {
+      setSponsorPhotoStatus("Las fotos deben ser JPG, PNG o WebP.");
+      return;
+    }
+    if (editingSponsor) {
+      addSponsorPhoto(accepted[0]);
+      if (accepted.length > 1) setSponsorPhotoStatus("En la edición solo se cambia una foto.");
+      return;
+    }
+    var room = 80 - sponsors.length;
+    if (room <= 0) {
+      setSponsorPhotoStatus("Ya hay 80 patrocinadores.");
+      return;
+    }
+    if (accepted.length > room) accepted = accepted.slice(0, room);
+    captureSponsorEdits();
+    sponsorUploadBusy = true;
+    setSponsorPhotoStatus("Subiendo fotos…");
+    var created = [];
+    var chain = Promise.resolve();
+    accepted.forEach(function (file, index) {
+      chain = chain.then(function () {
+        var id = partnerId("s-", index);
+        return uploadPartnerPhoto("/api/admin/sponsors/photo", id, file).then(function (result) {
+          if (!result.ok) throw new Error((result.data && result.data.error) || "No se pudo guardar la foto.");
+          created.push({
+            id: id,
+            name: pictureName(file),
+            link: "",
+            photo: result.data.file,
+            visible: false
+          });
+        });
+      });
+    });
+    chain.then(function () {
+      sponsorFilters = { name: "", link: "", photo: "" };
+      sponsors = sponsors.concat(created);
+      return saveSponsorList(sponsors, created.length === 1 ? "Se agregó 1 patrocinador oculto." : "Se agregaron " + created.length + " patrocinadores ocultos.");
+    }).then(function (result) {
+      if (!result || !result.ok) {
+        var failedSponsors = {};
+        created.forEach(function (item) {
+          failedSponsors[item.id] = true;
+          releaseSponsorFile(item.id, item.photo);
+        });
+        sponsors = sponsors.filter(function (item) { return !failedSponsors[item.id]; });
+        setSponsorPhotoStatus((result && result.data && result.data.error) || "No se pudo guardar.");
+        return;
+      }
+      paintSponsorRows();
+      setSponsorPhotoStatus(created.length === 1 ? "Se agregó una fila oculta. Edita el nombre y el enlace." : "Se agregaron " + created.length + " filas ocultas. Edita el nombre y el enlace en cada fila.");
+    }).catch(function (error) {
+      var failedSponsors = {};
+      created.forEach(function (item) {
+        failedSponsors[item.id] = true;
+        releaseSponsorFile(item.id, item.photo);
+      });
+      sponsors = sponsors.filter(function (item) { return !failedSponsors[item.id]; });
+      setSponsorPhotoStatus(error.message || "No se pudo guardar la foto.");
+    }).then(function () {
+      sponsorUploadBusy = false;
+    });
+  }
+
+  function submitSponsor(form) {
+    if (!sponsorDraft) return;
+    if (sponsorUploadBusy) {
+      setSponsorError("Espera a que termine la foto.");
+      return;
+    }
+    var name = String(new FormData(form).get("name") || "").trim();
+    var link = String(new FormData(form).get("link") || "").trim();
+    if (!name) return setSponsorError("Escribe el nombre del patrocinador.");
+    if (link && !/^https?:\/\//i.test(link)) return setSponsorError("El enlace debe empezar por https://.");
+    var existing = sponsorById(sponsorDraft.id);
+    var next = {
+      id: sponsorDraft.id,
+      name: name,
+      link: link,
+      photo: sponsorDraft.photo || "",
+      visible: existing ? existing.visible !== false : true
+    };
+    var list = [];
+    var placed = false;
+    sponsors.forEach(function (item) {
+      if (item.id === next.id) {
+        list.push(next);
+        placed = true;
+      } else list.push(item);
+    });
+    if (!placed) list.push(next);
+    var button = form.querySelector("button[type=submit]");
+    button.disabled = true;
+    setSponsorError("");
+    sponsors = list;
+    saveSponsorList(sponsors, existing ? "Patrocinador actualizado." : "Patrocinador agregado.").then(function (result) {
+      button.disabled = false;
+      if (!result.ok) return setSponsorError(result.data.error || "No se pudo guardar.");
+      sponsorDraft = null;
+      sponsorFormOpen = false;
+      editingSponsor = "";
+      render();
+    }).catch(function () {
+      button.disabled = false;
+      setSponsorError("No se pudo guardar.");
+    });
+  }
+
   function render() {
+    captureBenefitEdits();
+    captureSponsorEdits();
     if (tab === "jugadoras") {
       if (collapseAddForm) {
         playerDraft = null;
@@ -1613,8 +2418,18 @@
     }
     paintNavs();
     var site = siteTabs.filter(function (item) { return item.id === tab; })[0];
-    if (site) {
+    if (site && site.id !== "beneficios" && site.id !== "patrocinadores") {
       panel.innerHTML = sitePanel(site);
+      return;
+    }
+    if (tab === "beneficios") {
+      panel.innerHTML = benefitsPanel();
+      syncBenefitSelection();
+      return;
+    }
+    if (tab === "patrocinadores") {
+      panel.innerHTML = sponsorsPanel();
+      syncSponsorSelection();
       return;
     }
     if (tab === "ajustes") {
@@ -1629,7 +2444,7 @@
       panel.innerHTML = playersPanel();
       syncRosterSelection();
     }
-    else panel.innerHTML = "<article class=\"panel-card\"><p>Cargando visitas…</p></article>";
+    else panel.innerHTML = analyticsSettingsCard();
   }
 
   function openApp() {
@@ -1662,19 +2477,54 @@
     return Promise.all([
       api("/api/admin/settings", "GET"),
       api("/api/admin/events", "GET"),
-      api("/api/admin/roster", "GET")
+      api("/api/admin/roster", "GET"),
+      api("/api/admin/benefits", "GET"),
+      api("/api/admin/sponsors", "GET")
     ]).then(function (results) {
       if (!results[0].ok) throw new Error("session");
       settings = results[0].data;
       events = results[1].ok ? results[1].data.events || [] : [];
       players = results[2].ok ? results[2].data.players || [] : [];
+      benefits = results[3].ok ? results[3].data.benefits || [] : [];
+      sponsors = results[4].ok ? results[4].data.sponsors || [] : [];
+      rememberBenefits();
+      rememberSponsors();
     });
   }
 
-  function showTelemetry() {
-    api("/api/admin/telemetry", "GET").then(function (result) {
-      if (!result.ok) return;
-      if (tab === "telemetria") panel.innerHTML = telemetryPanel(result.data);
+  function saveAnalytics(form) {
+    var error = document.getElementById("analytics-error");
+    var googleId = String(form.googleId.value || "").trim().toUpperCase();
+    var facebookId = String(form.facebookId.value || "").replace(/\s+/g, "");
+    var googleOn = form.googleOn.checked;
+    var facebookOn = form.facebookOn.checked;
+    form.googleId.value = googleId;
+    form.facebookId.value = facebookId;
+    function fail(message) {
+      if (error) {
+        error.hidden = false;
+        error.textContent = message;
+      }
+      setStatus("");
+    }
+    if (googleOn && !googleId) return fail("Escribe el ID de medición de Google Analytics para activarlo.");
+    if (facebookOn && !facebookId) return fail("Escribe el ID del píxel de Facebook para activarlo.");
+    if (googleId && !/^G-[A-Z0-9]{4,16}$/.test(googleId)) return fail("El ID de Google Analytics debe verse como G-XXXXXXXXXX.");
+    if (facebookId && !/^\d{5,20}$/.test(facebookId)) return fail("El ID del píxel de Facebook debe ser un número.");
+    if (error) error.hidden = true;
+    var button = form.querySelector("button");
+    button.disabled = true;
+    api("/api/admin/settings", "PUT", {
+      pages: settings.pages,
+      analytics: { googleId: googleId, googleOn: googleOn, facebookId: facebookId, facebookOn: facebookOn }
+    }).then(function (result) {
+      button.disabled = false;
+      if (!result.ok) return fail(result.data.error || "No se pudo guardar.");
+      settings = result.data;
+      setStatus("Medición guardada.");
+    }).catch(function () {
+      button.disabled = false;
+      fail("No se pudo guardar.");
     });
   }
 
@@ -1744,7 +2594,219 @@
     if (event.target.closest("[data-event-note-cmd]")) event.preventDefault();
   });
 
+  var partnerPhotoDialog = document.getElementById("partner-photo-dialog");
+  if (partnerPhotoDialog) {
+    partnerPhotoDialog.addEventListener("click", function (event) {
+      if (event.target === partnerPhotoDialog || event.target.closest("[data-close-partner-photo]")) partnerPhotoDialog.close();
+    });
+  }
+
   app.addEventListener("click", function (event) {
+    var partnerPreview = event.target.closest("[data-preview-partner]");
+    if (partnerPreview && partnerPhotoDialog) {
+      var partnerSource = partnerPreview.querySelector("img");
+      var partnerPhoto = partnerPhotoDialog.querySelector("[data-partner-photo]");
+      if (partnerSource && partnerSource.getAttribute("src")) {
+        partnerPhoto.alt = partnerPreview.getAttribute("data-preview-partner") || "";
+        if (partnerPhoto.getAttribute("src") !== partnerSource.src) partnerPhoto.src = partnerSource.src;
+        partnerPhotoDialog.showModal();
+      }
+      return;
+    }
+    if (event.target.closest("#add-benefit")) {
+      openBenefitForm("");
+      return;
+    }
+    if (event.target.closest("#cancel-benefit")) {
+      discardBenefitDraft();
+      render();
+      return;
+    }
+    var editBenefit = event.target.closest("[data-edit-benefit]");
+    if (editBenefit) {
+      openBenefitForm(editBenefit.getAttribute("data-edit-benefit"));
+      return;
+    }
+    var toggleBenefit = event.target.closest("[data-toggle-benefit]");
+    if (toggleBenefit) {
+      var toggleId = toggleBenefit.getAttribute("data-toggle-benefit");
+      var toggled = benefitById(toggleId);
+      if (!toggled) return;
+      var nextVisible = toggled.visible === false;
+      var toggledList = benefits.map(function (item) {
+        if (item.id !== toggleId) return item;
+        var copy = {};
+        Object.keys(item).forEach(function (key) { copy[key] = item[key]; });
+        copy.visible = nextVisible;
+        return copy;
+      });
+      benefits = toggledList;
+      saveBenefitList(benefits, nextVisible ? "El beneficio quedó visible." : "El beneficio quedó oculto.").then(function (result) {
+        if (!result.ok) setStatus(result.data.error || "No se pudo guardar.");
+        else render();
+      });
+      return;
+    }
+    var removeBenefit = event.target.closest("[data-remove-benefit]");
+    if (removeBenefit) {
+      var removeId = removeBenefit.getAttribute("data-remove-benefit");
+      var removed = benefitById(removeId);
+      if (!removed) return;
+      askPartnerRemove("Quitar beneficio", "¿Quitar el beneficio " + removed.name + "?", function () {
+        if (benefitDraft && benefitDraft.id === removeId) {
+          benefitDraft = null;
+          benefitFormOpen = false;
+          editingBenefit = "";
+        }
+        delete selectedBenefits[removeId];
+        benefits = benefits.filter(function (item) { return item.id !== removeId; });
+        saveBenefitList(benefits, "Beneficio eliminado.").then(function (result) {
+          if (!result.ok) setStatus(result.data.error || "No se pudo quitar.");
+          else render();
+        });
+      });
+      return;
+    }
+    if (event.target.id === "benefit-bulk-show") {
+      applyPartnerVisibility("benefit", true);
+      return;
+    }
+    if (event.target.id === "benefit-bulk-hide") {
+      applyPartnerVisibility("benefit", false);
+      return;
+    }
+    if (event.target.id === "benefit-bulk-delete") {
+      var chosen = benefits.filter(function (item) { return selectedBenefits[item.id]; });
+      if (!chosen.length) return;
+      var question = chosen.length === 1 ? "¿Quitar el beneficio " + chosen[0].name + "?" : "¿Quitar " + chosen.length + " beneficios?";
+      askPartnerRemove(chosen.length === 1 ? "Quitar beneficio" : "Quitar beneficios", question, function () {
+        var drop = {};
+        chosen.forEach(function (item) { drop[item.id] = true; });
+        if (benefitDraft && drop[benefitDraft.id]) {
+          benefitDraft = null;
+          benefitFormOpen = false;
+          editingBenefit = "";
+        }
+        selectedBenefits = {};
+        benefits = benefits.filter(function (item) { return !drop[item.id]; });
+        saveBenefitList(benefits, chosen.length === 1 ? "Beneficio eliminado." : "Beneficios eliminados.").then(function (result) {
+          if (!result.ok) setStatus(result.data.error || "No se pudo quitar.");
+          else render();
+        });
+      });
+      return;
+    }
+    if (event.target.closest("#add-sponsor")) {
+      openSponsorForm("");
+      return;
+    }
+    if (event.target.closest("#cancel-sponsor")) {
+      discardSponsorDraft();
+      render();
+      return;
+    }
+    var editSponsor = event.target.closest("[data-edit-sponsor]");
+    if (editSponsor) {
+      openSponsorForm(editSponsor.getAttribute("data-edit-sponsor"));
+      return;
+    }
+    var toggleSponsor = event.target.closest("[data-toggle-sponsor]");
+    if (toggleSponsor) {
+      var sponsorToggleId = toggleSponsor.getAttribute("data-toggle-sponsor");
+      var toggledSponsor = sponsorById(sponsorToggleId);
+      if (!toggledSponsor) return;
+      var sponsorVisible = toggledSponsor.visible === false;
+      var sponsorList = sponsors.map(function (item) {
+        if (item.id !== sponsorToggleId) return item;
+        var copy = {};
+        Object.keys(item).forEach(function (key) { copy[key] = item[key]; });
+        copy.visible = sponsorVisible;
+        return copy;
+      });
+      sponsors = sponsorList;
+      saveSponsorList(sponsors, sponsorVisible ? "El patrocinador quedó visible." : "El patrocinador quedó oculto.").then(function (result) {
+        if (!result.ok) setStatus(result.data.error || "No se pudo guardar.");
+        else render();
+      });
+      return;
+    }
+    var removeSponsor = event.target.closest("[data-remove-sponsor]");
+    if (removeSponsor) {
+      var sponsorRemoveId = removeSponsor.getAttribute("data-remove-sponsor");
+      var removedSponsor = sponsorById(sponsorRemoveId);
+      if (!removedSponsor) return;
+      askPartnerRemove("Quitar patrocinador", "¿Quitar el patrocinador " + removedSponsor.name + "?", function () {
+        if (sponsorDraft && sponsorDraft.id === sponsorRemoveId) {
+          sponsorDraft = null;
+          sponsorFormOpen = false;
+          editingSponsor = "";
+        }
+        delete selectedSponsors[sponsorRemoveId];
+        sponsors = sponsors.filter(function (item) { return item.id !== sponsorRemoveId; });
+        saveSponsorList(sponsors, "Patrocinador eliminado.").then(function (result) {
+          if (!result.ok) setStatus(result.data.error || "No se pudo quitar.");
+          else render();
+        });
+      });
+      return;
+    }
+    if (event.target.id === "sponsor-bulk-show") {
+      applyPartnerVisibility("sponsor", true);
+      return;
+    }
+    if (event.target.id === "sponsor-bulk-hide") {
+      applyPartnerVisibility("sponsor", false);
+      return;
+    }
+    if (event.target.id === "sponsor-bulk-delete") {
+      var chosenSponsors = sponsors.filter(function (item) { return selectedSponsors[item.id]; });
+      if (!chosenSponsors.length) return;
+      var sponsorQuestion = chosenSponsors.length === 1 ? "¿Quitar el patrocinador " + chosenSponsors[0].name + "?" : "¿Quitar " + chosenSponsors.length + " patrocinadores?";
+      askPartnerRemove(chosenSponsors.length === 1 ? "Quitar patrocinador" : "Quitar patrocinadores", sponsorQuestion, function () {
+        var sponsorDrop = {};
+        chosenSponsors.forEach(function (item) { sponsorDrop[item.id] = true; });
+        if (sponsorDraft && sponsorDrop[sponsorDraft.id]) {
+          sponsorDraft = null;
+          sponsorFormOpen = false;
+          editingSponsor = "";
+        }
+        selectedSponsors = {};
+        sponsors = sponsors.filter(function (item) { return !sponsorDrop[item.id]; });
+        saveSponsorList(sponsors, chosenSponsors.length === 1 ? "Patrocinador eliminado." : "Patrocinadores eliminados.").then(function (result) {
+          if (!result.ok) setStatus(result.data.error || "No se pudo quitar.");
+          else render();
+        });
+      });
+      return;
+    }
+    if (event.target.closest("[data-remove-sponsor-photo]") && sponsorDraft) {
+      var droppedSponsorPhoto = sponsorDraft.photo;
+      var sponsorDraftId = sponsorDraft.id;
+      sponsorDraft.photo = "";
+      paintSponsorPhoto();
+      setSponsorPhotoStatus("");
+      releaseSponsorFile(sponsorDraftId, droppedSponsorPhoto);
+      return;
+    }
+    var sponsorDropZone = event.target.closest("#sponsor-photo-drop");
+    if (sponsorDropZone && sponsorDraft && event.target.id !== "sponsor-photo-file") {
+      document.getElementById("sponsor-photo-file").click();
+      return;
+    }
+    if (event.target.closest("[data-remove-benefit-photo]") && benefitDraft) {
+      var droppedPhoto = benefitDraft.photo;
+      var draftId = benefitDraft.id;
+      benefitDraft.photo = "";
+      paintBenefitPhoto();
+      setBenefitPhotoStatus("");
+      releaseBenefitFile(draftId, droppedPhoto);
+      return;
+    }
+    var benefitDrop = event.target.closest("#benefit-photo-drop");
+    if (benefitDrop && benefitDraft && event.target.id !== "benefit-photo-file") {
+      document.getElementById("benefit-photo-file").click();
+      return;
+    }
     var noteCommand = event.target.closest("[data-event-note-cmd]");
     if (noteCommand) {
       var noteInput = document.getElementById("event-note-input");
@@ -1893,12 +2955,13 @@
       }
       if (nextTab === "jugadoras" && tab !== "jugadoras") rosterOpen = !!(playerDraft || pendingPlayer);
       if (tab === "eventos" && nextTab !== "eventos") discardEventDraft();
+      if (tab === "beneficios" && nextTab !== "beneficios") discardBenefitDraft();
+      if (tab === "patrocinadores" && nextTab !== "patrocinadores") discardSponsorDraft();
       tab = nextTab;
       if (nextTab !== "eventos") editingEvent = "";
       editingPlayer = "";
       setStatus("");
       render();
-      if (tab === "telemetria") showTelemetry();
       return;
     }
     var editEvent = event.target.closest("[data-edit-event]");
@@ -2088,6 +3151,55 @@
     reader.readAsDataURL(file);
   }
 
+  app.addEventListener("change", function (event) {
+    if (event.target.id === "sponsor-photo-file") {
+      var sponsorFiles = Array.prototype.slice.call(event.target.files || []);
+      event.target.value = "";
+      addSponsorPhotos(sponsorFiles);
+      return;
+    }
+    if (event.target.id !== "benefit-photo-file") return;
+    var benefitFiles = Array.prototype.slice.call(event.target.files || []);
+    event.target.value = "";
+    addBenefitPhotos(benefitFiles);
+  });
+
+  app.addEventListener("dragover", function (event) {
+    var sponsorZone = event.target.closest("#sponsor-photo-drop");
+    if (sponsorZone && sponsorDraft) {
+      event.preventDefault();
+      sponsorZone.classList.add("is-over");
+      return;
+    }
+    var benefitZone = event.target.closest("#benefit-photo-drop");
+    if (!benefitZone || !benefitDraft) return;
+    event.preventDefault();
+    benefitZone.classList.add("is-over");
+  });
+
+  app.addEventListener("dragleave", function (event) {
+    var sponsorZone = event.target.closest("#sponsor-photo-drop");
+    if (sponsorZone && !sponsorZone.contains(event.relatedTarget)) sponsorZone.classList.remove("is-over");
+    var benefitZone = event.target.closest("#benefit-photo-drop");
+    if (!benefitZone || benefitZone.contains(event.relatedTarget)) return;
+    benefitZone.classList.remove("is-over");
+  });
+
+  app.addEventListener("drop", function (event) {
+    var sponsorZone = event.target.closest("#sponsor-photo-drop");
+    if (sponsorZone && sponsorDraft) {
+      event.preventDefault();
+      sponsorZone.classList.remove("is-over");
+      addSponsorPhotos(event.dataTransfer && event.dataTransfer.files);
+      return;
+    }
+    var benefitZone = event.target.closest("#benefit-photo-drop");
+    if (!benefitZone || !benefitDraft) return;
+    event.preventDefault();
+    benefitZone.classList.remove("is-over");
+    addBenefitPhotos(event.dataTransfer && event.dataTransfer.files);
+  });
+
   app.addEventListener("dragover", function (event) {
     if (!event.target.closest("#roster-drop")) return;
     event.preventDefault();
@@ -2127,17 +3239,259 @@
     paintRosterRows();
   }
 
+  var sponsorEditTimer = 0;
+  var benefitEditTimer = 0;
+
+  function rowCanSave(item) {
+    if (!item || !String(item.name || "").trim()) return false;
+    if (item.link && !/^https?:\/\//i.test(item.link)) return false;
+    return true;
+  }
+
+  function scheduleSponsorSave() {
+    clearTimeout(sponsorEditTimer);
+    sponsorEditTimer = setTimeout(function () {
+      captureSponsorEdits();
+      var dirty = false;
+      var invalid = false;
+      sponsors.forEach(function (item) {
+        var now = item.name + "\n" + (item.link || "");
+        if ((sponsorSaved[item.id] || "") === now) return;
+        dirty = true;
+        if (!rowCanSave(item)) invalid = true;
+      });
+      if (!dirty || invalid) {
+        if (invalid) setStatus("Revisa el nombre y el enlace. El enlace debe empezar por https://.");
+        return;
+      }
+      saveSponsorList(sponsors, "Patrocinador actualizado.");
+    }, 400);
+  }
+
+  function scheduleBenefitSave() {
+    clearTimeout(benefitEditTimer);
+    benefitEditTimer = setTimeout(function () {
+      captureBenefitEdits();
+      var dirty = false;
+      var invalid = false;
+      benefits.forEach(function (item) {
+        var now = item.name + "\n" + (item.link || "");
+        if ((benefitSaved[item.id] || "") === now) return;
+        dirty = true;
+        if (!rowCanSave(item)) invalid = true;
+      });
+      if (!dirty || invalid) {
+        if (invalid) setStatus("Revisa el nombre y el enlace. El enlace debe empezar por https://.");
+        return;
+      }
+      saveBenefitList(benefits, "Beneficio actualizado.");
+    }, 400);
+  }
+
   app.addEventListener("input", function (event) {
+    var sponsorNameInput = event.target.closest("[data-sponsor-name]");
+    if (sponsorNameInput) {
+      var namedSponsor = sponsorById(sponsorNameInput.getAttribute("data-sponsor-name"));
+      if (namedSponsor) namedSponsor.name = sponsorNameInput.value;
+      scheduleSponsorSave();
+      return;
+    }
+    var sponsorLinkInput = event.target.closest("[data-sponsor-link]");
+    if (sponsorLinkInput) {
+      var linkedSponsor = sponsorById(sponsorLinkInput.getAttribute("data-sponsor-link"));
+      if (linkedSponsor) linkedSponsor.link = sponsorLinkInput.value;
+      scheduleSponsorSave();
+      return;
+    }
+    var benefitNameInput = event.target.closest("[data-benefit-name]");
+    if (benefitNameInput) {
+      var namedBenefit = benefitById(benefitNameInput.getAttribute("data-benefit-name"));
+      if (namedBenefit) namedBenefit.name = benefitNameInput.value;
+      scheduleBenefitSave();
+      return;
+    }
+    var benefitLinkInput = event.target.closest("[data-benefit-link]");
+    if (benefitLinkInput) {
+      var linkedBenefit = benefitById(benefitLinkInput.getAttribute("data-benefit-link"));
+      if (linkedBenefit) linkedBenefit.link = benefitLinkInput.value;
+      scheduleBenefitSave();
+      return;
+    }
+    if (event.target.form && event.target.form.id === "sponsor-form" && sponsorDraft) {
+      if (event.target.name === "name") sponsorDraft.formName = event.target.value;
+      if (event.target.name === "link") sponsorDraft.formLink = event.target.value;
+    }
+    if (event.target.form && event.target.form.id === "benefit-form" && benefitDraft) {
+      if (event.target.name === "name") benefitDraft.formName = event.target.value;
+      if (event.target.name === "link") benefitDraft.formLink = event.target.value;
+    }
+    var sponsorFilter = event.target.closest("[data-sponsor-filter]");
+    if (sponsorFilter && sponsorFilter.tagName !== "SELECT") {
+      sponsorFilters[sponsorFilter.getAttribute("data-sponsor-filter")] = sponsorFilter.value;
+      var sponsorHead = sponsorFilter.closest("th");
+      if (sponsorHead) sponsorHead.classList.toggle("is-filtered", sponsorFilter.value.trim() !== "");
+      paintSponsorRows();
+      return;
+    }
+    var benefitFilter = event.target.closest("[data-benefit-filter]");
+    if (benefitFilter && benefitFilter.tagName !== "SELECT") {
+      benefitFilters[benefitFilter.getAttribute("data-benefit-filter")] = benefitFilter.value;
+      var benefitHead = benefitFilter.closest("th");
+      if (benefitHead) benefitHead.classList.toggle("is-filtered", benefitFilter.value.trim() !== "");
+      paintBenefitRows();
+      return;
+    }
     var filter = event.target.closest("[data-filter]");
     if (filter) applyRosterFilter(filter);
   });
 
+  app.addEventListener("focusout", function (event) {
+    var sponsorField = event.target.closest("[data-sponsor-name], [data-sponsor-link]");
+    if (sponsorField) {
+      var sponsorFieldId = sponsorField.getAttribute("data-sponsor-name") || sponsorField.getAttribute("data-sponsor-link");
+      setTimeout(function () {
+        captureSponsorEdits();
+        var sponsorFieldItem = sponsorById(sponsorFieldId);
+        if (!sponsorFieldItem) return;
+        var sponsorNow = sponsorFieldItem.name + "\n" + (sponsorFieldItem.link || "");
+        if (sponsorSaved[sponsorFieldId] === sponsorNow) return;
+        if (!String(sponsorFieldItem.name || "").trim()) {
+          setStatus("Escribe el nombre del patrocinador.");
+          return;
+        }
+        if (sponsorFieldItem.link && !/^https?:\/\//i.test(sponsorFieldItem.link)) {
+          setStatus("El enlace debe empezar por https://.");
+          return;
+        }
+        saveSponsorList(sponsors, "Patrocinador actualizado.");
+      }, 0);
+      return;
+    }
+    var benefitField = event.target.closest("[data-benefit-name], [data-benefit-link]");
+    if (!benefitField) return;
+    var benefitFieldId = benefitField.getAttribute("data-benefit-name") || benefitField.getAttribute("data-benefit-link");
+    setTimeout(function () {
+      captureBenefitEdits();
+      var benefitFieldItem = benefitById(benefitFieldId);
+      if (!benefitFieldItem) return;
+      var benefitNow = benefitFieldItem.name + "\n" + (benefitFieldItem.link || "");
+      if (benefitSaved[benefitFieldId] === benefitNow) return;
+      if (!String(benefitFieldItem.name || "").trim()) {
+        setStatus("Escribe el nombre del beneficio.");
+        return;
+      }
+      if (benefitFieldItem.link && !/^https?:\/\//i.test(benefitFieldItem.link)) {
+        setStatus("El enlace debe empezar por https://.");
+        return;
+      }
+      saveBenefitList(benefits, "Beneficio actualizado.");
+    }, 0);
+  });
+
   app.addEventListener("change", function (event) {
+    if (event.target.id === "sponsor-select-all") {
+      var sponsorMark = event.target.checked;
+      visibleSponsors().forEach(function (item) {
+        if (sponsorMark) selectedSponsors[item.id] = true;
+        else delete selectedSponsors[item.id];
+      });
+      paintSponsorRows();
+      return;
+    }
+    var sponsorBox = event.target.closest("[data-select-sponsor]");
+    if (sponsorBox) {
+      var sponsorId = sponsorBox.getAttribute("data-select-sponsor");
+      if (sponsorBox.checked) selectedSponsors[sponsorId] = true;
+      else delete selectedSponsors[sponsorId];
+      var sponsorRow = sponsorBox.closest("tr");
+      if (sponsorRow) sponsorRow.classList.toggle("is-selected", sponsorBox.checked);
+      syncSponsorSelection();
+      return;
+    }
+    var sponsorPhotoFilter = event.target.closest("select[data-sponsor-filter]");
+    if (sponsorPhotoFilter) {
+      sponsorFilters.photo = sponsorPhotoFilter.value;
+      var sponsorPhotoHead = sponsorPhotoFilter.closest("th");
+      if (sponsorPhotoHead) sponsorPhotoHead.classList.toggle("is-filtered", sponsorPhotoFilter.value !== "");
+      paintSponsorRows();
+      return;
+    }
+    if (event.target.id === "benefit-select-all") {
+      var mark = event.target.checked;
+      visibleBenefits().forEach(function (item) {
+        if (mark) selectedBenefits[item.id] = true;
+        else delete selectedBenefits[item.id];
+      });
+      paintBenefitRows();
+      return;
+    }
+    var benefitBox = event.target.closest("[data-select-benefit]");
+    if (benefitBox) {
+      var benefitId = benefitBox.getAttribute("data-select-benefit");
+      if (benefitBox.checked) selectedBenefits[benefitId] = true;
+      else delete selectedBenefits[benefitId];
+      var benefitRow = benefitBox.closest("tr");
+      if (benefitRow) benefitRow.classList.toggle("is-selected", benefitBox.checked);
+      syncBenefitSelection();
+      return;
+    }
+    var benefitPhotoFilter = event.target.closest("select[data-benefit-filter]");
+    if (benefitPhotoFilter) {
+      benefitFilters.photo = benefitPhotoFilter.value;
+      var photoHead = benefitPhotoFilter.closest("th");
+      if (photoHead) photoHead.classList.toggle("is-filtered", benefitPhotoFilter.value !== "");
+      paintBenefitRows();
+      return;
+    }
     var filter = event.target.closest("select[data-filter], input[type=\"date\"][data-filter]");
     if (filter) applyRosterFilter(filter);
   });
 
+  function reorderPartners(kind, fromId, toId) {
+    if (!fromId || !toId || fromId === toId) return;
+    var source = kind === "sponsor" ? sponsors : benefits;
+    var fromIndex = -1;
+    var toIndex = -1;
+    source.forEach(function (item, index) {
+      if (item.id === fromId) fromIndex = index;
+      if (item.id === toId) toIndex = index;
+    });
+    if (fromIndex < 0 || toIndex < 0) return;
+    var next = source.slice();
+    var moved = next.splice(fromIndex, 1)[0];
+    next.splice(toIndex, 0, moved);
+    var done = function (result) {
+      if (!result.ok) setStatus(result.data.error || "No se pudo guardar el orden.");
+      else if (kind === "sponsor") paintSponsorRows();
+      else paintBenefitRows();
+      var handle = document.querySelector("[data-drag-partner=\"" + kind + "\"][data-partner-id=\"" + fromId + "\"]");
+      if (handle) handle.focus();
+    };
+    if (kind === "sponsor") {
+      sponsors = next;
+      saveSponsorList(sponsors, "Orden actualizado.").then(done);
+    } else {
+      benefits = next;
+      saveBenefitList(benefits, "Orden actualizado.").then(done);
+    }
+  }
+
   app.addEventListener("dragstart", function (event) {
+    var partnerHandle = event.target.closest("[data-drag-partner]");
+    if (partnerHandle) {
+      dragColumn = "";
+      dragPartner = {
+        kind: partnerHandle.getAttribute("data-drag-partner"),
+        id: partnerHandle.getAttribute("data-partner-id")
+      };
+      if (event.dataTransfer) {
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", dragPartner.id);
+      }
+      var partnerRow = partnerHandle.closest("tr");
+      if (partnerRow) partnerRow.classList.add("is-dragging");
+      return;
+    }
     var handle = event.target.closest("[data-drag-column]");
     if (!handle) return;
     dragColumn = handle.getAttribute("data-drag-column");
@@ -2150,6 +3504,17 @@
   });
 
   app.addEventListener("dragover", function (event) {
+    if (dragPartner) {
+      var partnerRow = event.target.closest("tr[data-partner-row=\"" + dragPartner.kind + "\"]");
+      if (!partnerRow) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+      document.querySelectorAll(".benefit-table tr.is-drop-target").forEach(function (el) {
+        if (el !== partnerRow) el.classList.remove("is-drop-target");
+      });
+      if (partnerRow.getAttribute("data-partner-id") !== dragPartner.id) partnerRow.classList.add("is-drop-target");
+      return;
+    }
     var cell = columnTarget(event.target);
     if (!cell || !dragColumn) return;
     event.preventDefault();
@@ -2167,6 +3532,18 @@
   });
 
   app.addEventListener("drop", function (event) {
+    if (dragPartner) {
+      var partnerRow = event.target.closest("tr[data-partner-row=\"" + dragPartner.kind + "\"]");
+      if (!partnerRow) return;
+      event.preventDefault();
+      var moving = dragPartner;
+      dragPartner = null;
+      document.querySelectorAll(".is-dragging, .is-drop-target").forEach(function (el) {
+        el.classList.remove("is-dragging", "is-drop-target");
+      });
+      reorderPartners(moving.kind, moving.id, partnerRow.getAttribute("data-partner-id"));
+      return;
+    }
     var cell = columnTarget(event.target);
     if (!cell || !dragColumn) return;
     event.preventDefault();
@@ -2177,12 +3554,25 @@
 
   app.addEventListener("dragend", function () {
     dragColumn = "";
+    dragPartner = null;
     document.querySelectorAll(".is-dragging, .is-drop-target").forEach(function (el) {
       el.classList.remove("is-dragging", "is-drop-target");
     });
   });
 
   app.addEventListener("keydown", function (event) {
+    var partnerHandle = event.target.closest("[data-drag-partner]");
+    if (partnerHandle && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+      event.preventDefault();
+      var kind = partnerHandle.getAttribute("data-drag-partner");
+      var id = partnerHandle.getAttribute("data-partner-id");
+      var shown = kind === "sponsor" ? visibleSponsors() : visibleBenefits();
+      var index = -1;
+      shown.forEach(function (item, itemIndex) { if (item.id === id) index = itemIndex; });
+      var target = shown[index + (event.key === "ArrowUp" ? -1 : 1)];
+      if (target) reorderPartners(kind, id, target.id);
+      return;
+    }
     var handle = event.target.closest("[data-drag-column]");
     if (!handle) return;
     var inList = Boolean(handle.closest("#roster-column-list"));
@@ -2284,6 +3674,21 @@
   });
 
   app.addEventListener("submit", function (event) {
+    if (event.target.id === "sponsor-form") {
+      event.preventDefault();
+      submitSponsor(event.target);
+      return;
+    }
+    if (event.target.id === "benefit-form") {
+      event.preventDefault();
+      submitBenefit(event.target);
+      return;
+    }
+    if (event.target.id === "analytics-form") {
+      event.preventDefault();
+      saveAnalytics(event.target);
+      return;
+    }
     if (event.target.id === "password-form" || event.target.id === "totp-start-form" || event.target.id === "totp-confirm-form" || event.target.id === "totp-disable-form") {
       event.preventDefault();
       submitSettings(event.target);
@@ -3184,6 +4589,26 @@
     if (!nextPlayer) return;
     addPlayer(nextPlayer);
   });
+  var pendingPartnerRemove = null;
+  var removePartnerDialog = document.getElementById("remove-partner-dialog");
+  function askPartnerRemove(title, copy, action) {
+    pendingPartnerRemove = action;
+    document.getElementById("remove-partner-title").textContent = title;
+    document.getElementById("remove-partner-copy").textContent = copy;
+    removePartnerDialog.showModal();
+  }
+  document.getElementById("cancel-remove-partner").addEventListener("click", function () {
+    pendingPartnerRemove = null;
+    removePartnerDialog.close();
+  });
+  removePartnerDialog.addEventListener("cancel", function () { pendingPartnerRemove = null; });
+  document.getElementById("confirm-remove-partner").addEventListener("click", function () {
+    var action = pendingPartnerRemove;
+    pendingPartnerRemove = null;
+    removePartnerDialog.close();
+    if (action) action();
+  });
+
   var deleteDialog = document.getElementById("delete-player-dialog");
   document.getElementById("cancel-delete-player").addEventListener("click", function () {
     pendingDeleteIds = [];

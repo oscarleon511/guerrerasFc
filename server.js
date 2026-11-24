@@ -19,23 +19,16 @@ const PHOTO_DIR = path.join(DATA, "player-photos");
 const EVENT_MEDIA = path.join(DATA, "event-media");
 const TEMPLATE_FILE = path.join(DATA, "roster-template.xlsx");
 const EVENTS_FILE = path.join(DATA, "events.json");
-const TELEMETRY_FILE = path.join(DATA, "telemetry.json");
+const BENEFITS_FILE = path.join(DATA, "benefits.json");
+const BENEFIT_MEDIA = path.join(DATA, "benefit-media");
+const SPONSORS_FILE = path.join(DATA, "sponsors.json");
+const SPONSOR_MEDIA = path.join(DATA, "sponsor-media");
 const SESSION_MS = 8 * 60 * 60 * 1000;
 const IDLE_MS = 30 * 60 * 1000;
 const LOCK_MS = 15 * 60 * 1000;
 const MAX_FAILS = 5;
 const SCRYPT = { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 };
 const PAGE_IDS = ["inicio", "sedes", "plantilla", "nosotras", "patrocinadores", "beneficios", "tienda", "eventos"];
-const LABELS = {
-  inicio: "Inicio",
-  sedes: "Sedes",
-  plantilla: "Plantilla",
-  nosotras: "Nosotras",
-  patrocinadores: "Patrocinadores",
-  beneficios: "Beneficios",
-  tienda: "Tienda",
-  eventos: "Eventos"
-};
 const PUBLIC_PAGES = {
   "/": "inicio",
   "/index.html": "inicio",
@@ -147,10 +140,40 @@ function ensureAuth() {
 
 let authRecord = ensureAuth();
 
+function blankAnalytics() {
+  return { googleId: "", googleOn: false, facebookId: "", facebookOn: false };
+}
+
+function cleanAnalytics(input, current) {
+  const base = current && current.analytics ? current.analytics : blankAnalytics();
+  if (!input || typeof input !== "object") {
+    return {
+      googleId: String(base.googleId || ""),
+      googleOn: base.googleOn === true,
+      facebookId: String(base.facebookId || ""),
+      facebookOn: base.facebookOn === true
+    };
+  }
+  const googleId = String(input.googleId == null ? base.googleId : input.googleId).trim().toUpperCase();
+  const facebookId = String(input.facebookId == null ? base.facebookId : input.facebookId).replace(/\s+/g, "");
+  if (googleId && !/^G-[A-Z0-9]{4,16}$/.test(googleId)) {
+    return { error: "El ID de Google Analytics debe verse como G-XXXXXXXXXX." };
+  }
+  if (facebookId && !/^\d{5,20}$/.test(facebookId)) {
+    return { error: "El ID del píxel de Facebook debe ser un número." };
+  }
+  return {
+    googleId: googleId,
+    googleOn: input.googleOn === true && Boolean(googleId),
+    facebookId: facebookId,
+    facebookOn: input.facebookOn === true && Boolean(facebookId)
+  };
+}
+
 function defaultSettings() {
   const pages = {};
   PAGE_IDS.forEach(function (id) { pages[id] = { visible: true }; });
-  return { pages: pages };
+  return { pages: pages, analytics: blankAnalytics() };
 }
 
 function readSettings() {
@@ -161,6 +184,8 @@ function readSettings() {
       if (!settingsCache.pages[id]) settingsCache.pages[id] = { visible: true };
     });
     settingsCache.pages.inicio.visible = true;
+    const analytics = cleanAnalytics(settingsCache.analytics, { analytics: blankAnalytics() });
+    settingsCache.analytics = analytics.error ? blankAnalytics() : analytics;
   }
   return settingsCache;
 }
@@ -478,6 +503,116 @@ function eventFilePath(id, file) {
   return full;
 }
 
+function benefitMediaDir(id) {
+  if (!ID.test(id)) return null;
+  const dir = path.resolve(BENEFIT_MEDIA, id);
+  const relative = path.relative(BENEFIT_MEDIA, dir);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return dir;
+}
+
+function benefitFilePath(id, file) {
+  const dir = benefitMediaDir(id);
+  if (!dir || !PHOTO_NAME.test(file)) return null;
+  const full = path.resolve(dir, file);
+  const relative = path.relative(dir, full);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return full;
+}
+
+function cleanBenefitLink(value) {
+  const text = cleanText(value, 300);
+  if (!text) return "";
+  let url;
+  try { url = new URL(text); } catch (error) { return null; }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  return url.href;
+}
+
+function validBenefits(list) {
+  if (!Array.isArray(list) || list.length > 80) return null;
+  const seen = {};
+  const benefits = [];
+  for (let i = 0; i < list.length; i += 1) {
+    const item = list[i];
+    if (!item || typeof item !== "object") return null;
+    const id = cleanText(item.id, 40);
+    if (!ID.test(id) || seen[id]) return null;
+    seen[id] = true;
+    const name = cleanText(item.name, 80);
+    if (!name) return null;
+    const link = cleanBenefitLink(item.link);
+    if (link === null) return null;
+    const photo = cleanText(item.photo, 24);
+    if (photo && !PHOTO_NAME.test(photo)) return null;
+    benefits.push({
+      id: id,
+      name: name,
+      link: link,
+      photo: photo,
+      visible: item.visible !== false
+    });
+  }
+  return benefits;
+}
+
+function storedBenefits() {
+  const stored = readJson(BENEFITS_FILE, []);
+  return Array.isArray(stored) ? stored : [];
+}
+
+function syncBenefitMedia(benefits) {
+  syncPartnerMedia(BENEFIT_MEDIA, benefits, benefitMediaDir);
+}
+
+function sponsorMediaDir(id) {
+  if (!ID.test(id)) return null;
+  const dir = path.resolve(SPONSOR_MEDIA, id);
+  const relative = path.relative(SPONSOR_MEDIA, dir);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return dir;
+}
+
+function sponsorFilePath(id, file) {
+  const dir = sponsorMediaDir(id);
+  if (!dir || !PHOTO_NAME.test(file)) return null;
+  const full = path.resolve(dir, file);
+  const relative = path.relative(dir, full);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return full;
+}
+
+function storedSponsors() {
+  const stored = readJson(SPONSORS_FILE, []);
+  return Array.isArray(stored) ? stored : [];
+}
+
+function syncPartnerMedia(root, items, dirFor) {
+  const keep = {};
+  items.forEach(function (item) {
+    keep[item.id] = {};
+    if (item.photo) keep[item.id][item.photo] = true;
+  });
+  if (!fs.existsSync(root)) return;
+  fs.readdirSync(root).forEach(function (id) {
+    const dir = dirFor(id);
+    if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return;
+    if (!keep[id]) {
+      removeDir(dir);
+      return;
+    }
+    fs.readdirSync(dir).forEach(function (file) {
+      if (keep[id][file]) return;
+      const full = path.join(dir, file);
+      if (fs.existsSync(full) && fs.statSync(full).isFile()) fs.unlinkSync(full);
+    });
+  });
+}
+
+function syncSponsorMedia(sponsors) {
+  syncPartnerMedia(SPONSOR_MEDIA, sponsors, sponsorMediaDir);
+}
+
 function countEventFiles(dir, pattern) {
   if (!fs.existsSync(dir)) return 0;
   return fs.readdirSync(dir).filter(function (name) { return pattern.test(name); }).length;
@@ -764,41 +899,6 @@ function passwordOk(password) {
   return !weak.includes(password.toLowerCase());
 }
 
-function bogotaDay(iso) {
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Bogota",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit"
-  }).format(new Date(iso));
-}
-
-function recordVisit(page) {
-  const stored = readJson(TELEMETRY_FILE, { visits: [] });
-  const visits = Array.isArray(stored.visits) ? stored.visits : [];
-  visits.push({ path: page, at: new Date().toISOString() });
-  writeJson(TELEMETRY_FILE, { visits: visits.slice(-2000) });
-}
-
-function telemetryReport() {
-  const stored = readJson(TELEMETRY_FILE, { visits: [] });
-  const visits = Array.isArray(stored.visits) ? stored.visits : [];
-  const today = bogotaDay(new Date().toISOString());
-  const counts = {};
-  PAGE_IDS.forEach(function (id) { counts[id] = 0; });
-  let todayCount = 0;
-  visits.forEach(function (visit) {
-    if (counts[visit.path] != null) counts[visit.path] += 1;
-    if (bogotaDay(visit.at) === today) todayCount += 1;
-  });
-  return {
-    total: visits.length,
-    today: todayCount,
-    pages: PAGE_IDS.map(function (id) { return { id: id, label: LABELS[id], count: counts[id] }; }),
-    recent: visits.slice(-15).reverse()
-  };
-}
-
 function publicPlayers() {
   const players = readJson(PLAYERS_FILE, []);
   return (Array.isArray(players) ? players : []).filter(function (player) {
@@ -1053,6 +1153,44 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { username: session.username, csrf: session.csrf, totpEnabled: Boolean(authRecord.totpEnabled) });
   }
 
+  if (req.method === "GET" && pathname === "/api/benefits") {
+    const benefits = storedBenefits().filter(function (item) {
+      return item && item.visible !== false && item.photo;
+    }).map(function (item) {
+      return { id: item.id, name: item.name, link: item.link || "", photo: item.photo };
+    });
+    return sendJson(res, 200, { benefits: benefits });
+  }
+  if ((req.method === "GET" || req.method === "HEAD") && pathname === "/api/benefits/media") {
+    const query = new URL(req.url, "http://127.0.0.1").searchParams;
+    const id = cleanText(query.get("id"), 40);
+    const file = cleanText(query.get("file"), 24);
+    const item = storedBenefits().filter(function (benefit) {
+      return benefit && benefit.id === id && benefit.visible !== false && benefit.photo === file;
+    })[0];
+    const full = item ? benefitFilePath(id, file) : null;
+    if (!full || !fs.existsSync(full) || !fs.statSync(full).isFile()) return sendJson(res, 404, { error: "No encontrada." });
+    return sendMedia(req, res, full, mediaType(file), "public, max-age=3600");
+  }
+  if (req.method === "GET" && pathname === "/api/sponsors") {
+    const sponsors = storedSponsors().filter(function (item) {
+      return item && item.visible !== false && item.photo;
+    }).map(function (item) {
+      return { id: item.id, name: item.name, link: item.link || "", photo: item.photo };
+    });
+    return sendJson(res, 200, { sponsors: sponsors });
+  }
+  if ((req.method === "GET" || req.method === "HEAD") && pathname === "/api/sponsors/media") {
+    const query = new URL(req.url, "http://127.0.0.1").searchParams;
+    const id = cleanText(query.get("id"), 40);
+    const file = cleanText(query.get("file"), 24);
+    const item = storedSponsors().filter(function (sponsor) {
+      return sponsor && sponsor.id === id && sponsor.visible !== false && sponsor.photo === file;
+    })[0];
+    const full = item ? sponsorFilePath(id, file) : null;
+    if (!full || !fs.existsSync(full) || !fs.statSync(full).isFile()) return sendJson(res, 404, { error: "No encontrada." });
+    return sendMedia(req, res, full, mediaType(file), "public, max-age=3600");
+  }
   if (req.method === "GET" && pathname === "/api/events") {
     const published = storedEvents().filter(function (item) { return item && item.published === true; }).map(function (item) {
       return {
@@ -1108,9 +1246,103 @@ async function handleApi(req, res, pathname) {
       const visible = id === "inicio" ? true : incoming && typeof incoming.visible === "boolean" ? incoming.visible : current.pages[id].visible;
       pages[id] = { visible: visible };
     });
-    settingsCache = { pages: pages };
+    const analytics = cleanAnalytics(body.analytics, current);
+    if (analytics.error) return sendJson(res, 400, { error: analytics.error });
+    settingsCache = { pages: pages, analytics: analytics };
     writeJson(SETTINGS_FILE, settingsCache);
     return sendJson(res, 200, settingsCache);
+  }
+  if (req.method === "GET" && pathname === "/api/admin/benefits") return sendJson(res, 200, { benefits: storedBenefits() });
+  if (req.method === "PUT" && pathname === "/api/admin/benefits") {
+    const body = await readBody(req);
+    const benefits = validBenefits(body.benefits);
+    if (!benefits) return sendJson(res, 400, { error: "Revisa el nombre y el enlace del beneficio." });
+    writeJson(BENEFITS_FILE, benefits);
+    syncBenefitMedia(benefits);
+    return sendJson(res, 200, { benefits: benefits });
+  }
+  if (req.method === "GET" && pathname === "/api/admin/benefits/media") {
+    const query = new URL(req.url, "http://127.0.0.1").searchParams;
+    const id = cleanText(query.get("id"), 40);
+    const file = cleanText(query.get("file"), 24);
+    const full = benefitFilePath(id, file);
+    if (!full || !fs.existsSync(full) || !fs.statSync(full).isFile()) return sendJson(res, 404, { error: "No encontrada." });
+    return sendMedia(req, res, full, mediaType(file));
+  }
+  if (req.method === "POST" && pathname === "/api/admin/benefits/photo") {
+    const body = await readBody(req, 5000000);
+    const id = cleanText(body.id, 40);
+    const dir = benefitMediaDir(id);
+    if (!dir) return sendJson(res, 400, { error: "La foto no se pudo guardar." });
+    if (countEventFiles(dir, PHOTO_NAME) >= 4) return sendJson(res, 400, { error: "Quita la foto actual antes de agregar otra." });
+    const raw = String(body.data || "").replace(/\s/g, "");
+    const base64 = raw.indexOf(",") >= 0 ? raw.split(",").pop() : raw;
+    if (!/^[A-Za-z0-9+/=]+$/.test(base64)) return sendJson(res, 400, { error: "La foto no se pudo leer." });
+    const buffer = Buffer.from(base64, "base64");
+    if (buffer.length < 32 || buffer.length > 2500000) return sendJson(res, 400, { error: "La foto debe pesar menos de 2.5 MB." });
+    const kind = imageKind(buffer);
+    if (!kind) return sendJson(res, 400, { error: "La foto debe ser JPG, PNG o WebP." });
+    const filename = crypto.randomBytes(8).toString("hex") + "." + kind;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, filename), buffer);
+    return sendJson(res, 200, { file: filename });
+  }
+  if (req.method === "POST" && pathname === "/api/admin/benefits/media/remove") {
+    const body = await readBody(req);
+    const id = cleanText(body.id, 40);
+    const file = cleanText(body.file, 24);
+    const saved = storedBenefits().filter(function (item) { return item && item.id === id; })[0];
+    if (saved && saved.photo === file) return sendJson(res, 400, { error: "Esa foto sigue guardada en el beneficio." });
+    const full = benefitFilePath(id, file);
+    if (!full) return sendJson(res, 400, { error: "No se pudo quitar la foto." });
+    if (fs.existsSync(full) && fs.statSync(full).isFile()) fs.unlinkSync(full);
+    return sendJson(res, 200, { ok: true });
+  }
+  if (req.method === "GET" && pathname === "/api/admin/sponsors") return sendJson(res, 200, { sponsors: storedSponsors() });
+  if (req.method === "PUT" && pathname === "/api/admin/sponsors") {
+    const body = await readBody(req);
+    const sponsors = validBenefits(body.sponsors);
+    if (!sponsors) return sendJson(res, 400, { error: "Revisa el nombre y el enlace del patrocinador." });
+    writeJson(SPONSORS_FILE, sponsors);
+    syncSponsorMedia(sponsors);
+    return sendJson(res, 200, { sponsors: sponsors });
+  }
+  if (req.method === "GET" && pathname === "/api/admin/sponsors/media") {
+    const query = new URL(req.url, "http://127.0.0.1").searchParams;
+    const id = cleanText(query.get("id"), 40);
+    const file = cleanText(query.get("file"), 24);
+    const full = sponsorFilePath(id, file);
+    if (!full || !fs.existsSync(full) || !fs.statSync(full).isFile()) return sendJson(res, 404, { error: "No encontrada." });
+    return sendMedia(req, res, full, mediaType(file));
+  }
+  if (req.method === "POST" && pathname === "/api/admin/sponsors/photo") {
+    const body = await readBody(req, 5000000);
+    const id = cleanText(body.id, 40);
+    const dir = sponsorMediaDir(id);
+    if (!dir) return sendJson(res, 400, { error: "La foto no se pudo guardar." });
+    if (countEventFiles(dir, PHOTO_NAME) >= 4) return sendJson(res, 400, { error: "Quita la foto actual antes de agregar otra." });
+    const raw = String(body.data || "").replace(/\s/g, "");
+    const base64 = raw.indexOf(",") >= 0 ? raw.split(",").pop() : raw;
+    if (!/^[A-Za-z0-9+/=]+$/.test(base64)) return sendJson(res, 400, { error: "La foto no se pudo leer." });
+    const buffer = Buffer.from(base64, "base64");
+    if (buffer.length < 32 || buffer.length > 2500000) return sendJson(res, 400, { error: "La foto debe pesar menos de 2.5 MB." });
+    const kind = imageKind(buffer);
+    if (!kind) return sendJson(res, 400, { error: "La foto debe ser JPG, PNG o WebP." });
+    const filename = crypto.randomBytes(8).toString("hex") + "." + kind;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, filename), buffer);
+    return sendJson(res, 200, { file: filename });
+  }
+  if (req.method === "POST" && pathname === "/api/admin/sponsors/media/remove") {
+    const body = await readBody(req);
+    const id = cleanText(body.id, 40);
+    const file = cleanText(body.file, 24);
+    const saved = storedSponsors().filter(function (item) { return item && item.id === id; })[0];
+    if (saved && saved.photo === file) return sendJson(res, 400, { error: "Esa foto sigue guardada en el patrocinador." });
+    const full = sponsorFilePath(id, file);
+    if (!full) return sendJson(res, 400, { error: "No se pudo quitar la foto." });
+    if (fs.existsSync(full) && fs.statSync(full).isFile()) fs.unlinkSync(full);
+    return sendJson(res, 200, { ok: true });
   }
   if (req.method === "GET" && pathname === "/api/admin/events") return sendJson(res, 200, { events: storedEvents() });
   if (req.method === "PUT" && pathname === "/api/admin/events") {
@@ -1256,7 +1488,6 @@ async function handleApi(req, res, pathname) {
     writeJson(PLAYERS_FILE, players);
     return sendJson(res, 200, { players: players });
   }
-  if (req.method === "GET" && pathname === "/api/admin/telemetry") return sendJson(res, 200, telemetryReport());
   if (req.method === "POST" && pathname === "/api/admin/password") return changePassword(req, res, session);
   if (req.method === "POST" && pathname === "/api/admin/totp/start") return startTotp(req, res, session);
   if (req.method === "POST" && pathname === "/api/admin/totp/confirm") return confirmTotp(req, res, session);
@@ -1300,9 +1531,6 @@ function serveStatic(req, res, pathname) {
   if (pathname === "/GFCCaliAdmin" || file.endsWith("GFCCaliAdmin.html")) headers["X-Robots-Tag"] = "noindex, nofollow";
   res.writeHead(200, headers);
   res.end(body);
-  if (pageKey && req.method === "GET") {
-    try { recordVisit(pageKey); } catch (error) { console.error(error); }
-  }
 }
 
 async function handle(req, res) {

@@ -7,3 +7,5 @@ data/telemetry.json
 data/*.tmp
 data/player-photos/
 data/event-media/
+data/benefit-media/
+data/sponsor-media/
