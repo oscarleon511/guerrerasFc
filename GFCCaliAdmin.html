@@ -12,7 +12,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/styles.css?v=48">
-  <link rel="stylesheet" href="css/admin.css?v=61">
+  <link rel="stylesheet" href="css/admin.css?v=78">
 </head>
 <body class="admin-body">
   <main id="login" class="login-screen">
@@ -216,6 +216,24 @@
     <img alt="" data-partner-photo>
   </dialog>
 
-  <script src="js/admin.js?v=63"></script>
+  <dialog id="team-logo-dialog" class="password-dialog" aria-labelledby="team-logo-editor-title">
+    <h2 id="team-logo-editor-title">Ajustar logo</h2>
+    <p class="field-hint">Arrastra el logo para encuadrarlo. Acerca o aleja el cuadro y pulsa Guardar recorte.</p>
+    <div class="photo-editor-stage">
+      <canvas id="team-logo-canvas" width="320" height="320" aria-label="Encuadre del logo"></canvas>
+    </div>
+    <div class="photo-zoom">
+      <button type="button" id="team-logo-zoom-out" aria-label="Alejar">−</button>
+      <input id="team-logo-zoom" type="range" min="1" max="3" step="0.01" value="1" aria-label="Zoom">
+      <button type="button" id="team-logo-zoom-in" aria-label="Acercar">+</button>
+    </div>
+    <p id="team-logo-editor-status" class="player-info-status" role="status"></p>
+    <div class="admin-actions">
+      <button class="btn" type="button" id="apply-team-logo">Guardar recorte</button>
+      <button class="btn btn-ghost" type="button" id="close-team-logo">Cancelar</button>
+    </div>
+  </dialog>
+
+  <script src="js/admin.js?v=78"></script>
 </body>
 </html>

@@ -7,6 +7,7 @@ const https = require("https");
 const path = require("path");
 const { rowsFromWorkbook, rosterWorkbook } = require("./lib/sheet");
 const { base32Encode, totpMatches } = require("./lib/totp");
+const { buildBracket } = require("./lib/bracket");
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT) || 3000;
@@ -25,12 +26,14 @@ const BENEFIT_MEDIA = path.join(DATA, "benefit-media");
 const SPONSORS_FILE = path.join(DATA, "sponsors.json");
 const SPONSOR_MEDIA = path.join(DATA, "sponsor-media");
 const LOCATIONS_FILE = path.join(DATA, "locations.json");
+const TOURNAMENTS_FILE = path.join(DATA, "tournaments.json");
+const TEAM_MEDIA = path.join(DATA, "team-media");
 const SESSION_MS = 8 * 60 * 60 * 1000;
 const IDLE_MS = 30 * 60 * 1000;
 const LOCK_MS = 15 * 60 * 1000;
 const MAX_FAILS = 5;
 const SCRYPT = { N: 131072, r: 8, p: 1, maxmem: 256 * 1024 * 1024 };
-const PAGE_IDS = ["inicio", "sedes", "plantilla", "nosotras", "patrocinadores", "beneficios", "tienda", "eventos"];
+const PAGE_IDS = ["inicio", "sedes", "plantilla", "nosotras", "patrocinadores", "beneficios", "tienda", "eventos", "torneos"];
 const PUBLIC_PAGES = {
   "/": "inicio",
   "/index.html": "inicio",
@@ -47,7 +50,9 @@ const PUBLIC_PAGES = {
   "/tienda": "tienda",
   "/tienda.html": "tienda",
   "/eventos": "eventos",
-  "/eventos.html": "eventos"
+  "/eventos.html": "eventos",
+  "/torneos": "torneos",
+  "/torneos.html": "torneos"
 };
 const FILES = {
   "/": "index.html",
@@ -58,6 +63,7 @@ const FILES = {
   "/beneficios": "beneficios.html",
   "/tienda": "tienda.html",
   "/eventos": "eventos.html",
+  "/torneos": "torneos.html",
   "/GFCCaliAdmin": "GFCCaliAdmin.html"
 };
 const TYPES = {
@@ -1250,6 +1256,208 @@ async function saveEventVideo(req, res) {
   return sendJson(res, 200, { file: filename });
 }
 
+const CUP_STAGES = { group: 1, r16: 1, quarter: 1, semi: 1, final: 1, third: 1, match: 1 };
+
+function cleanClock(value) {
+  const text = cleanText(value, 5);
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(text) ? text : "";
+}
+
+function optionalDate(value) {
+  const text = cleanText(value, 10);
+  if (!text) return "";
+  return validDate(text) ? text : null;
+}
+
+function optionalClock(value) {
+  const text = cleanText(value, 5);
+  if (!text) return "";
+  return cleanClock(text) || null;
+}
+
+function cleanRich(value, limit) {
+  const html = cleanNotes(value);
+  if (eventNoteText(html).length > limit) return null;
+  return eventNoteText(html) ? html : "";
+}
+
+function emptyCup() {
+  return { tournaments: [], teams: [], matches: [] };
+}
+
+function storedCup() {
+  const stored = readJson(TOURNAMENTS_FILE, emptyCup());
+  if (!stored || typeof stored !== "object") return emptyCup();
+  return {
+    tournaments: Array.isArray(stored.tournaments) ? stored.tournaments : [],
+    teams: Array.isArray(stored.teams) ? stored.teams : [],
+    matches: Array.isArray(stored.matches) ? stored.matches : []
+  };
+}
+
+function teamMediaDir(id) {
+  if (!ID.test(id)) return null;
+  const dir = path.resolve(TEAM_MEDIA, id);
+  const relative = path.relative(TEAM_MEDIA, dir);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return dir;
+}
+
+function teamFilePath(id, file) {
+  const dir = teamMediaDir(id);
+  if (!dir || !PHOTO_NAME.test(file)) return null;
+  const full = path.resolve(dir, file);
+  const relative = path.relative(dir, full);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) return null;
+  return full;
+}
+
+function syncTeamMedia(teams) {
+  const keep = {};
+  teams.forEach(function (team) {
+    keep[team.id] = {};
+    if (team.logo) keep[team.id][team.logo] = true;
+  });
+  if (!fs.existsSync(TEAM_MEDIA)) return;
+  fs.readdirSync(TEAM_MEDIA).forEach(function (id) {
+    const dir = teamMediaDir(id);
+    if (!dir || !fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return;
+    if (!keep[id]) {
+      removeDir(dir);
+      return;
+    }
+    fs.readdirSync(dir).forEach(function (file) {
+      if (keep[id][file]) return;
+      const full = path.join(dir, file);
+      if (fs.existsSync(full) && fs.statSync(full).isFile()) fs.unlinkSync(full);
+    });
+  });
+}
+
+function validCup(body) {
+  if (!body || typeof body !== "object") return { error: "Revisa los datos del torneo." };
+  const sourceTournaments = Array.isArray(body.tournaments) ? body.tournaments : null;
+  const sourceTeams = Array.isArray(body.teams) ? body.teams : null;
+  const sourceMatches = Array.isArray(body.matches) ? body.matches : null;
+  if (!sourceTournaments || !sourceTeams || !sourceMatches) return { error: "Revisa los datos del torneo." };
+  if (sourceTournaments.length > 40 || sourceTeams.length > 80 || sourceMatches.length > 400) {
+    return { error: "Hay demasiados registros." };
+  }
+  const tournaments = [];
+  const tournamentIds = {};
+  for (let i = 0; i < sourceTournaments.length; i += 1) {
+    const item = sourceTournaments[i];
+    if (!item || typeof item !== "object") return { error: "Revisa los datos del torneo." };
+    const id = cleanText(item.id, 40);
+    const name = cleanText(item.name, 80);
+    if (!ID.test(id) || tournamentIds[id] || !name) return { error: "Revisa el nombre del torneo." };
+    const date = optionalDate(item.date);
+    const time = optionalClock(item.time);
+    const info = cleanRich(item.info, 4000);
+    if (date === null || time === null || info === null) return { error: "Revisa la fecha, la hora o la información del torneo. La información admite hasta 4000 caracteres." };
+    const fields = [];
+    const sourceFields = Array.isArray(item.fields) ? item.fields : [];
+    if (sourceFields.length > 6) return { error: "Un torneo admite hasta 6 canchas." };
+    for (let fieldIndex = 0; fieldIndex < sourceFields.length; fieldIndex += 1) {
+      const field = cleanText(sourceFields[fieldIndex], 80);
+      if (!field) continue;
+      if (fields.indexOf(field) !== -1) return { error: "Cada cancha debe tener un nombre distinto." };
+      fields.push(field);
+    }
+    tournamentIds[id] = true;
+    tournaments.push({
+      id: id,
+      name: name,
+      location: cleanText(item.location, 120),
+      address: cleanAddress(item.address),
+      date: date,
+      time: time,
+      info: info,
+      fields: fields
+    });
+  }
+  const teams = [];
+  const teamIds = {};
+  for (let i = 0; i < sourceTeams.length; i += 1) {
+    const item = sourceTeams[i];
+    if (!item || typeof item !== "object") return { error: "Revisa los datos del equipo." };
+    const id = cleanText(item.id, 40);
+    const name = cleanText(item.name, 80);
+    if (!ID.test(id) || teamIds[id] || !name) return { error: "Revisa el nombre del equipo." };
+    const info = cleanRich(item.info, 4000);
+    if (info === null) return { error: "La información del equipo admite hasta 4000 caracteres." };
+    const logo = cleanText(item.logo, 24);
+    if (logo && !PHOTO_NAME.test(logo)) return { error: "El logo del equipo no es válido." };
+    const tournamentId = cleanText(item.tournamentId, 40);
+    if (tournamentId && !tournamentIds[tournamentId]) return { error: "Elige un torneo de la lista o No aplica." };
+    teamIds[id] = true;
+    teams.push({
+      id: id,
+      name: name,
+      info: info,
+      logo: logo,
+      tournamentId: tournamentId
+    });
+  }
+  const matches = [];
+  const matchIds = {};
+  for (let i = 0; i < sourceMatches.length; i += 1) {
+    const item = sourceMatches[i];
+    if (!item || typeof item !== "object") return { error: "Revisa los datos del partido." };
+    const id = cleanText(item.id, 40);
+    const tournamentId = cleanText(item.tournamentId, 40);
+    const stage = cleanText(item.stage, 12);
+    if (!ID.test(id) || matchIds[id] || !tournamentIds[tournamentId] || !CUP_STAGES[stage]) return { error: "Revisa el partido." };
+    const group = cleanText(item.group, 1).toUpperCase();
+    if (group && "ABCDEF".indexOf(group) === -1) return { error: "Revisa el grupo del partido." };
+    const round = Number(item.round);
+    if (!Number.isInteger(round) || round < 0 || round > 30) return { error: "Revisa el partido." };
+    const team1Id = cleanText(item.team1Id, 40);
+    const team2Id = cleanText(item.team2Id, 40);
+    if ((team1Id && !teamIds[team1Id]) || (team2Id && !teamIds[team2Id]) || (team1Id && team1Id === team2Id)) {
+      return { error: "Elige dos equipos distintos." };
+    }
+    const date = optionalDate(item.date);
+    const time = optionalClock(item.time);
+    if (date === null || time === null) return { error: "Revisa la fecha y la hora del partido." };
+    matchIds[id] = true;
+    matches.push({
+      id: id,
+      tournamentId: tournamentId,
+      stage: stage,
+      group: group,
+      round: round,
+      team1Id: team1Id,
+      team2Id: team2Id,
+      label1: cleanText(item.label1, 80),
+      label2: cleanText(item.label2, 80),
+      field: cleanText(item.field, 80),
+      date: date,
+      time: time
+    });
+  }
+  return { tournaments: tournaments, teams: teams, matches: matches };
+}
+
+function publicCup() {
+  const cup = storedCup();
+  return {
+    tournaments: cup.tournaments,
+    teams: cup.teams.map(function (team) {
+      const full = team.logo ? teamFilePath(team.id, team.logo) : null;
+      const logo = full && fs.existsSync(full) && fs.statSync(full).isFile() ? team.logo : "";
+      return {
+        id: team.id,
+        name: team.name,
+        info: team.info || "",
+        logo: logo,
+        tournamentId: team.tournamentId || ""
+      };
+    }),
+    matches: cup.matches
+  };
+}
+
 async function handleApi(req, res, pathname) {
   if (req.method === "POST" && pathname === "/api/dev-login") return devLogin(req, res);
   if (req.method === "POST" && pathname === "/api/login") {
@@ -1267,6 +1475,16 @@ async function handleApi(req, res, pathname) {
     return sendJson(res, 200, { username: session.username, csrf: session.csrf, totpEnabled: Boolean(authRecord.totpEnabled) });
   }
 
+  if (req.method === "GET" && pathname === "/api/tournaments") return sendJson(res, 200, publicCup());
+  if ((req.method === "GET" || req.method === "HEAD") && pathname === "/api/tournaments/media") {
+    const query = new URL(req.url, "http://127.0.0.1").searchParams;
+    const id = cleanText(query.get("id"), 40);
+    const file = cleanText(query.get("file"), 24);
+    const team = storedCup().teams.filter(function (item) { return item && item.id === id && item.logo === file; })[0];
+    const full = team ? teamFilePath(id, file) : null;
+    if (!full || !fs.existsSync(full) || !fs.statSync(full).isFile()) return sendJson(res, 404, { error: "No encontrada." });
+    return sendMedia(req, res, full, mediaType(file), "public, max-age=3600");
+  }
   if (req.method === "GET" && pathname === "/api/benefits") {
     const benefits = storedBenefits().filter(function (item) {
       return item && item.visible !== false && item.photo;
@@ -1460,6 +1678,95 @@ async function handleApi(req, res, pathname) {
     if (!full) return sendJson(res, 400, { error: "No se pudo quitar la foto." });
     if (fs.existsSync(full) && fs.statSync(full).isFile()) fs.unlinkSync(full);
     return sendJson(res, 200, { ok: true });
+  }
+  if (req.method === "GET" && pathname === "/api/admin/tournaments") return sendJson(res, 200, storedCup());
+  if (req.method === "PUT" && pathname === "/api/admin/tournaments") {
+    const body = await readBody(req, 2000000);
+    const cup = validCup(body);
+    if (cup.error) return sendJson(res, 400, { error: cup.error });
+    writeJson(TOURNAMENTS_FILE, cup);
+    syncTeamMedia(cup.teams);
+    return sendJson(res, 200, cup);
+  }
+  if (req.method === "POST" && pathname === "/api/admin/tournaments/build") {
+    const body = await readBody(req);
+    const cup = storedCup();
+    const tournamentId = cleanText(body.tournamentId, 40);
+    const tournament = cup.tournaments.filter(function (item) { return item.id === tournamentId; })[0];
+    if (!tournament) return sendJson(res, 400, { error: "Elige un torneo." });
+    const requested = Array.isArray(body.teamIds) ? body.teamIds : [];
+    let teamIds;
+    let teams = cup.teams;
+    if (requested.length) {
+      const seen = {};
+      teamIds = [];
+      for (let teamIndex = 0; teamIndex < requested.length; teamIndex += 1) {
+        const id = cleanText(requested[teamIndex], 40);
+        const team = cup.teams.filter(function (item) { return item.id === id; })[0];
+        if (!ID.test(id) || seen[id] || !team) return sendJson(res, 400, { error: "Elige equipos del listado." });
+        seen[id] = true;
+        teamIds.push(id);
+      }
+      teams = cup.teams.map(function (team) {
+        if (!seen[team.id] || team.tournamentId === tournamentId) return team;
+        const copy = {};
+        Object.keys(team).forEach(function (key) { copy[key] = team[key]; });
+        copy.tournamentId = tournamentId;
+        return copy;
+      });
+    } else {
+      teamIds = cup.teams.filter(function (team) { return team.tournamentId === tournamentId; }).map(function (team) { return team.id; });
+    }
+    const plan = buildBracket(teamIds, tournament.fields, tournament.date, tournament.time);
+    if (plan.error) return sendJson(res, 400, { error: plan.error });
+    const matches = cup.matches.filter(function (item) { return item.tournamentId !== tournamentId; });
+    plan.matches.forEach(function (item) {
+      matches.push({
+        id: "m-" + crypto.randomBytes(8).toString("hex"),
+        tournamentId: tournamentId,
+        stage: item.stage,
+        group: item.group,
+        round: item.round,
+        team1Id: item.team1Id,
+        team2Id: item.team2Id,
+        label1: item.label1,
+        label2: item.label2,
+        field: item.field,
+        date: item.date,
+        time: item.time
+      });
+    });
+    const next = { tournaments: cup.tournaments, teams: teams, matches: matches };
+    const checked = validCup(next);
+    if (checked.error) return sendJson(res, 400, { error: checked.error });
+    writeJson(TOURNAMENTS_FILE, checked);
+    return sendJson(res, 200, checked);
+  }
+  if (req.method === "GET" && pathname === "/api/admin/tournaments/media") {
+    const query = new URL(req.url, "http://127.0.0.1").searchParams;
+    const id = cleanText(query.get("id"), 40);
+    const file = cleanText(query.get("file"), 24);
+    const full = teamFilePath(id, file);
+    if (!full || !fs.existsSync(full) || !fs.statSync(full).isFile()) return sendJson(res, 404, { error: "No encontrada." });
+    return sendMedia(req, res, full, mediaType(file));
+  }
+  if (req.method === "POST" && pathname === "/api/admin/tournaments/photo") {
+    const body = await readBody(req, 5000000);
+    const id = cleanText(body.id, 40);
+    const dir = teamMediaDir(id);
+    if (!dir) return sendJson(res, 400, { error: "El logo no se pudo guardar." });
+    if (countEventFiles(dir, PHOTO_NAME) >= 4) return sendJson(res, 400, { error: "Quita el logo actual antes de agregar otro." });
+    const raw = String(body.data || "").replace(/\s/g, "");
+    const base64 = raw.indexOf(",") >= 0 ? raw.split(",").pop() : raw;
+    if (!/^[A-Za-z0-9+/=]+$/.test(base64)) return sendJson(res, 400, { error: "El logo no se pudo leer." });
+    const buffer = Buffer.from(base64, "base64");
+    if (buffer.length < 32 || buffer.length > 2500000) return sendJson(res, 400, { error: "El logo debe pesar menos de 2.5 MB." });
+    const kind = imageKind(buffer);
+    if (!kind) return sendJson(res, 400, { error: "El logo debe ser JPG, PNG o WebP." });
+    const filename = crypto.randomBytes(8).toString("hex") + "." + kind;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, filename), buffer);
+    return sendJson(res, 200, { file: filename });
   }
   if (req.method === "GET" && pathname === "/api/admin/locations") return sendJson(res, 200, { locations: storedLocations() });
   if (req.method === "PUT" && pathname === "/api/admin/locations") {

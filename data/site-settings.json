@@ -7,7 +7,7 @@
       "visible": true
     },
     "plantilla": {
-      "visible": true
+      "visible": false
     },
     "nosotras": {
       "visible": true
@@ -22,6 +22,9 @@
       "visible": true
     },
     "eventos": {
+      "visible": true
+    },
+    "torneos": {
       "visible": true
     }
   },

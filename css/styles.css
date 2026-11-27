@@ -2395,3 +2395,106 @@ form.join-card .join-actions { position: sticky; bottom: 0; }
   .hero-logo.is-kick { animation: none; }
   .player-open img { transition: none; }
 }
+
+.cup-list { display: grid; gap: 1.5rem; }
+
+.cup-card {
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  padding: 1.25rem;
+  box-shadow: var(--shadow);
+}
+
+.cup-card h2, .cup-card h3 { margin: 0 0 0.45rem; }
+
+.cup-card h3 { margin-top: 1.3rem; color: var(--teal-ink); }
+
+.cup-meta, .cup-address { margin: 0.15rem 0; color: var(--slate); font-weight: 600; }
+
+.cup-address { white-space: pre-line; }
+
+.cup-info { margin-top: 0.8rem; }
+
+.cup-info p { margin: 0.35rem 0; }
+
+.cup-info ul, .cup-info ol { margin: 0.35rem 0; padding-left: 1.2rem; }
+
+.cup-teams {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr));
+  gap: 0.8rem;
+}
+
+.cup-team {
+  margin: 0;
+  padding: 0.8rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: var(--foam);
+  text-align: center;
+}
+
+.cup-team img {
+  width: 4.4rem;
+  height: 4.4rem;
+  object-fit: cover;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--white);
+}
+
+.cup-team figcaption { margin-top: 0.4rem; font-weight: 700; }
+
+.cup-team p { margin: 0.35rem 0 0; color: var(--slate); font-size: 0.92rem; }
+
+.cup-group { margin-top: 0.8rem; }
+
+.cup-matches { display: grid; gap: 0.55rem; }
+
+.cup-match {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.7rem;
+  border-radius: 0.8rem;
+  background: var(--ice);
+}
+
+.cup-side {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  font-weight: 700;
+}
+
+.cup-side.is-away { flex-direction: row-reverse; text-align: right; }
+
+.cup-side img {
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border-radius: 50%;
+  background: var(--white);
+}
+
+.cup-score {
+  color: var(--teal-ink);
+  font-weight: 700;
+}
+
+.cup-when {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--slate);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+@media (max-width: 640px) {
+  .cup-match { grid-template-columns: 1fr; }
+  .cup-side.is-away { flex-direction: row; text-align: left; }
+}

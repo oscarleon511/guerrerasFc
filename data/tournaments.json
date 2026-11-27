@@ -1,0 +1,300 @@
+{
+  "tournaments": [
+    {
+      "id": "c-mwza9jsi",
+      "name": "⚡🏆 ¡TORNEO RELÁMPAGO 2026 – QUE RUDE EL BALÓN! ⚽🔥",
+      "location": "EL Monumental Cali Canchas Sinteticas",
+      "address": "Calle 52N 3, La Flora, Valle del Cauca 760046",
+      "date": "2027-01-02",
+      "time": "08:01",
+      "info": "¡La pasión por el fútbol no se detiene! Prepárate para una jornada llena de emoción, competencia y grandes jugadas en nuestro TORNEO RELÁMPAGO, donde 8 equipos se enfrentarán para demostrar su talento y luchar por la victoria.<div><br></div><div>⚽ FORMATO DEL TORNEO</div><div><br></div><div>8 equipos participantes.</div><div><br></div><div>Competencia de eliminación directa.</div><div><br></div><div>¡Un solo objetivo: llegar a la gran final y quedarse con el título!</div><div><br></div><div>📅 Fecha: Miércoles, 2 de diciembre de 2026</div><div>⏰ Hora: 8:01 a. m.</div><div>📍 Lugar: EL MONUMENTAL – Canchas Sintéticas</div><div>Calle 52N #3, La Flora, Cali, Valle del Cauca.</div><div><br></div><div>🔥 8 EQUIPOS. UNA CANCHA. UN CAMPEÓN.</div><div><br></div><div>¡Alista tu equipo, prepara tus mejores jugadas y demuestra quién manda en la cancha!</div><div><br></div><div>🏆 ¡Que comience la batalla por el título! ⚽</div>",
+      "fields": [
+        "EL Monumental Cali Canchas Sinteticas"
+      ]
+    }
+  ],
+  "teams": [
+    {
+      "id": "tm-mwzao29y",
+      "name": "Guerreras FC Norte 1",
+      "info": "",
+      "logo": "bd5d7dd3cc9d23c8.jpg",
+      "tournamentId": "c-mwza9jsi"
+    },
+    {
+      "id": "tm-mwzaseqx",
+      "name": "Guerreras FC All Stars",
+      "info": "",
+      "logo": "2eb54c0db818c352.jpg",
+      "tournamentId": "c-mwza9jsi"
+    },
+    {
+      "id": "tm-mwzazgt5",
+      "name": "America Femenino A",
+      "info": "",
+      "logo": "4cd537cc1eb5e16c.jpg",
+      "tournamentId": "c-mwza9jsi"
+    },
+    {
+      "id": "tm-mwzb0td5",
+      "name": "Cali Femenino A",
+      "info": "",
+      "logo": "ee31c447335e7aad.jpg",
+      "tournamentId": "c-mwza9jsi"
+    },
+    {
+      "id": "tm-mwzb3at0",
+      "name": "Boca Jrs Femenino A",
+      "info": "",
+      "logo": "768a9550f309c0ff.jpg",
+      "tournamentId": "c-mwza9jsi"
+    },
+    {
+      "id": "tm-mwzb4p1b",
+      "name": "Real Madrid Femenino A",
+      "info": "",
+      "logo": "3120acfaa68fc4c7.jpg",
+      "tournamentId": "c-mwza9jsi"
+    },
+    {
+      "id": "tm-mwzb6feg",
+      "name": "Guerreras FC Sur 1",
+      "info": "",
+      "logo": "eb8c7ca5591152c8.jpg",
+      "tournamentId": "c-mwza9jsi"
+    },
+    {
+      "id": "tm-mwzb7y3t",
+      "name": "Barcelona Femenino A",
+      "info": "",
+      "logo": "acdd0f00aef80656.jpg",
+      "tournamentId": "c-mwza9jsi"
+    }
+  ],
+  "matches": [
+    {
+      "id": "m-d526ffd9475c9c8e",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "A",
+      "round": 1,
+      "team1Id": "tm-mwzao29y",
+      "team2Id": "tm-mwzb0td5",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "08:01"
+    },
+    {
+      "id": "m-536602561f3cae06",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "A",
+      "round": 1,
+      "team1Id": "tm-mwzaseqx",
+      "team2Id": "tm-mwzazgt5",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "08:26"
+    },
+    {
+      "id": "m-8874619eace458fd",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "B",
+      "round": 1,
+      "team1Id": "tm-mwzb3at0",
+      "team2Id": "tm-mwzb7y3t",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "08:51"
+    },
+    {
+      "id": "m-803509304121b2a8",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "B",
+      "round": 1,
+      "team1Id": "tm-mwzb4p1b",
+      "team2Id": "tm-mwzb6feg",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "09:16"
+    },
+    {
+      "id": "m-9f6f226f4eb0dadc",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "A",
+      "round": 2,
+      "team1Id": "tm-mwzao29y",
+      "team2Id": "tm-mwzazgt5",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "09:41"
+    },
+    {
+      "id": "m-90c3e9f0a2706bd8",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "A",
+      "round": 2,
+      "team1Id": "tm-mwzb0td5",
+      "team2Id": "tm-mwzaseqx",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "10:06"
+    },
+    {
+      "id": "m-7e8f1166cf247c6f",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "B",
+      "round": 2,
+      "team1Id": "tm-mwzb3at0",
+      "team2Id": "tm-mwzb6feg",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "10:31"
+    },
+    {
+      "id": "m-ffe73789051993be",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "B",
+      "round": 2,
+      "team1Id": "tm-mwzb7y3t",
+      "team2Id": "tm-mwzb4p1b",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "10:56"
+    },
+    {
+      "id": "m-aba081ec8d4fc540",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "A",
+      "round": 3,
+      "team1Id": "tm-mwzao29y",
+      "team2Id": "tm-mwzaseqx",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "11:21"
+    },
+    {
+      "id": "m-bf2940399732dcca",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "A",
+      "round": 3,
+      "team1Id": "tm-mwzazgt5",
+      "team2Id": "tm-mwzb0td5",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "11:46"
+    },
+    {
+      "id": "m-129311299f6292ea",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "B",
+      "round": 3,
+      "team1Id": "tm-mwzb3at0",
+      "team2Id": "tm-mwzb4p1b",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "12:11"
+    },
+    {
+      "id": "m-0752bf6b45cdc3ea",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "group",
+      "group": "B",
+      "round": 3,
+      "team1Id": "tm-mwzb6feg",
+      "team2Id": "tm-mwzb7y3t",
+      "label1": "",
+      "label2": "",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "12:36"
+    },
+    {
+      "id": "m-9c004eeb3bd74c61",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "semi",
+      "group": "",
+      "round": 1,
+      "team1Id": "",
+      "team2Id": "",
+      "label1": "1° Grupo A",
+      "label2": "2° Grupo B",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "13:01"
+    },
+    {
+      "id": "m-55f6d681d4e8e680",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "semi",
+      "group": "",
+      "round": 1,
+      "team1Id": "",
+      "team2Id": "",
+      "label1": "1° Grupo B",
+      "label2": "2° Grupo A",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "13:26"
+    },
+    {
+      "id": "m-c08b330daa2702e0",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "final",
+      "group": "",
+      "round": 2,
+      "team1Id": "",
+      "team2Id": "",
+      "label1": "Ganador semifinal 1",
+      "label2": "Ganador semifinal 2",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "13:51"
+    },
+    {
+      "id": "m-f12e5fef3ecf85b4",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "third",
+      "group": "",
+      "round": 3,
+      "team1Id": "",
+      "team2Id": "",
+      "label1": "Perdedor semifinal 1",
+      "label2": "Perdedor semifinal 2",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "14:16"
+    }
+  ]
+}

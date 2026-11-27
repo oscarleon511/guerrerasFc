@@ -31,6 +31,53 @@
   var locationSaveBusy = false;
   var locationFilters = { team: "", field: "", address: "", day: "", time: "" };
   var skipLocationCapture = false;
+  var cups = [];
+  var cupTeams = [];
+  var cupMatches = [];
+  var tournamentSheet = "torneos";
+  var editingCup = "";
+  var editingCupTeam = "";
+  var editingCupMatch = "";
+  var teamLogoData = "";
+  var teamLogoRemoved = false;
+  var teamFormOpen = false;
+  var cupFormOpen = false;
+  var selectedCupTeams = {};
+  var selectedBracketTournament = "";
+  var matchToolsOpen = false;
+  var matchView = "lista";
+  var bracketCup = "";
+  var matchFilters = { tournament: "", stage: "", team1: "", team2: "", field: "", date: "", time: "" };
+  var matchColumnDefs = [
+    ["tournament", "Torneo"],
+    ["stage", "Fase"],
+    ["team1", "Equipo 1"],
+    ["team2", "Equipo 2"],
+    ["field", "Cancha"],
+    ["date", "Fecha"],
+    ["time", "Hora"],
+    ["actions", "Acciones"]
+  ];
+  var hiddenMatchColumns = {};
+  var matchColumnsOpen = true;
+  try { matchColumnsOpen = localStorage.getItem("gfc-admin-match-columns") !== "closed"; } catch (error) { matchColumnsOpen = true; }
+  try {
+    var storedMatchColumns = JSON.parse(localStorage.getItem("gfc-admin-match-hidden") || "{}");
+    matchColumnDefs.forEach(function (column) {
+      if (storedMatchColumns[column[0]]) hiddenMatchColumns[column[0]] = true;
+    });
+    if (matchColumnDefs.every(function (column) { return hiddenMatchColumns[column[0]]; })) hiddenMatchColumns = {};
+  } catch (error) { hiddenMatchColumns = {}; }
+  var cupSaveBusy = false;
+  var cupStages = {
+    group: "Fase de grupos",
+    r16: "Octavos de final",
+    quarter: "Cuartos de final",
+    semi: "Semifinal",
+    final: "Final",
+    third: "Tercer puesto",
+    match: "Partido"
+  };
   var locationDays = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
   var locationDayOrder = [1, 2, 3, 4, 5, 6, 0];
   var eventNoteLimit = 10000;
@@ -66,6 +113,7 @@
     { id: "nosotras", label: "Nosotras", copy: "Visión, misión, categorías e historia del club." },
     { id: "patrocinadores", label: "Patrocinadores", copy: "Aliados, descuentos y el torneo." },
     { id: "beneficios", label: "Beneficios", copy: "Tarjeta VIP y los descuentos de los aliados." },
+    { id: "torneos", label: "Torneos", copy: "Torneos, equipos y partidos. Si está visible, la página Torneos del sitio muestra el cuadro." },
     { id: "tienda", label: "Tienda", copy: "Inscripción, mensualidad y uniformes. El pedido se envía por WhatsApp." }
   ];
   var clubTabs = [
@@ -236,6 +284,7 @@
     patrocinadores: navIcon("<path d=\"m12 3.8 2.1 4.4 4.8.7-3.5 3.4.8 4.8L12 14.8 7.8 17.1l.8-4.8L5.1 8.9l4.8-.7Z\"" + navStroke + "></path>"),
     beneficios: navIcon("<path d=\"M4 10h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V10ZM3 7h18v3H3ZM12 7v13M12 7c0-2.2-1.6-3.5-3-3.5S7.2 5 8.4 6.4C9.4 7.6 12 7 12 7Zm0 0c0-2.2 1.6-3.5 3-3.5s1.8 1.5.6 2.9C14.6 7.6 12 7 12 7Z\"" + navStroke + "></path>"),
     tienda: navIcon("<path d=\"M6 8h12l-1 12H7L6 8ZM9 8V6.5a3 3 0 0 1 6 0V8\"" + navStroke + "></path>"),
+    torneos: navIcon("<path d=\"M8 4h8v2a4 4 0 0 1-8 0V4Z\"" + navStroke + "></path><path d=\"M8 5H5.5A2.5 2.5 0 0 0 8 8.5M16 5h2.5A2.5 2.5 0 0 1 16 8.5M12 10v2.2M9.5 20h5M10 14.5h4V20h-4Z\"" + navStroke + "></path>"),
     telemetria: navIcon("<path d=\"M4 19V11M12 19V5M20 19v-7M3 19h18\"" + navStroke + "></path>"),
     eventos: navIcon("<path d=\"M5 6h14v14H5V6ZM5 10h14M8 4v4M16 4v4\"" + navStroke + "></path>"),
     jugadoras: navIcon("<path d=\"M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM5.5 20c.7-3.2 3.2-5 6.5-5s5.8 1.8 6.5 5\"" + navStroke + "></path>")
@@ -2681,6 +2730,746 @@
     });
   }
 
+  function cupById(id) {
+    return cups.filter(function (item) { return item.id === id; })[0] || null;
+  }
+
+  function cupTeamById(id) {
+    return cupTeams.filter(function (item) { return item.id === id; })[0] || null;
+  }
+
+  function cupMatchById(id) {
+    return cupMatches.filter(function (item) { return item.id === id; })[0] || null;
+  }
+
+  function cupName(id) {
+    var cup = cupById(id);
+    return cup ? cup.name : "No aplica";
+  }
+
+  function cupTeamLogoSrc(team) {
+    if (!team || !team.logo) return "";
+    return "/api/admin/tournaments/media?id=" + encodeURIComponent(team.id) + "&file=" + encodeURIComponent(team.logo);
+  }
+
+  function setCupError(id, message) {
+    var node = document.getElementById(id);
+    if (!node) return;
+    node.hidden = !message;
+    node.textContent = message || "";
+  }
+
+  function cupRich(id, label) {
+    return "<div class=\"wide notes-editor\"><span class=\"field-label\">" + label + "</span><div class=\"notes-tools\"><button type=\"button\" data-cup-cmd=\"bold\" data-cup-target=\"" + id + "\">Negrita</button><button type=\"button\" data-cup-cmd=\"italic\" data-cup-target=\"" + id + "\">Cursiva</button><button type=\"button\" data-cup-cmd=\"underline\" data-cup-target=\"" + id + "\">Subrayado</button><button type=\"button\" data-cup-cmd=\"insertUnorderedList\" data-cup-target=\"" + id + "\">Lista</button></div><div id=\"" + id + "\" class=\"notes-input\" contenteditable=\"true\" role=\"textbox\" aria-multiline=\"true\" aria-label=\"" + label + "\"></div><p id=\"" + id + "-count\" class=\"notes-count\" aria-live=\"polite\">0 / 4000</p></div>";
+  }
+
+  function cupRichValue(id) {
+    var input = document.getElementById(id);
+    if (!input) return "";
+    var html = sanitizeNotes(input.innerHTML);
+    return notesText(html) ? html : "";
+  }
+
+  function fillRich(id, html) {
+    var input = document.getElementById(id);
+    var count = document.getElementById(id + "-count");
+    if (input) input.innerHTML = sanitizeNotes(html || "");
+    bindRichField(input, count, 4000);
+  }
+
+  function cupSelect(selected, blank) {
+    var html = "<option value=\"\">" + escapeHtml(blank) + "</option>";
+    cups.forEach(function (cup) {
+      html += "<option value=\"" + escapeHtml(cup.id) + "\"" + (cup.id === selected ? " selected" : "") + ">" + escapeHtml(cup.name) + "</option>";
+    });
+    return html;
+  }
+
+  function cupTeamOptions(tournamentId, selected) {
+    var html = "<option value=\"\">Elige un equipo</option>";
+    cupTeams.forEach(function (team) {
+      if (team.tournamentId !== tournamentId && team.id !== selected) return;
+      html += "<option value=\"" + escapeHtml(team.id) + "\"" + (team.id === selected ? " selected" : "") + ">" + escapeHtml(team.name) + "</option>";
+    });
+    return html;
+  }
+
+  function cupFieldRow(name, index) {
+    var number = (index || 0) + 1;
+    return "<div class=\"cup-field\"><label class=\"field\"><span class=\"cup-field-name\">Cancha " + number + "</span><input name=\"field\" maxlength=\"80\" value=\"" + escapeHtml(name || "") + "\" placeholder=\"Nombre de la cancha\" aria-label=\"Nombre de la cancha " + number + "\"></label><button class=\"btn btn-ghost\" type=\"button\" data-remove-cup-field>Quitar</button></div>";
+  }
+
+  function numberCupFields() {
+    var rows = document.querySelectorAll("#cup-fields .cup-field");
+    Array.prototype.forEach.call(rows, function (row, index) {
+      var number = index + 1;
+      var title = row.querySelector(".cup-field-name");
+      var input = row.querySelector("input");
+      if (title) title.textContent = "Cancha " + number;
+      if (input) input.setAttribute("aria-label", "Nombre de la cancha " + number);
+    });
+  }
+
+  function saveCup(next, message) {
+    return api("/api/admin/tournaments", "PUT", next).then(function (result) {
+      if (result.ok) {
+        cups = result.data.tournaments || [];
+        cupTeams = result.data.teams || [];
+        cupMatches = result.data.matches || [];
+        setStatus(message || "");
+      }
+      return result;
+    });
+  }
+
+  function tournamentFormHtml() {
+    var current = editingCup ? cupById(editingCup) : null;
+    var fields = current && current.fields && current.fields.length ? current.fields : [""];
+    return "<form id=\"cup-form\" class=\"form-grid\"><h2 class=\"wide\">" + (current ? "Editar torneo" : "Nuevo torneo") + "</h2><p id=\"cup-error\" class=\"form-error wide\" role=\"alert\" hidden></p>" +
+      "<label class=\"field\">Nombre del torneo<input name=\"name\" required maxlength=\"80\" value=\"" + escapeHtml(current ? current.name : "") + "\"></label>" +
+      "<label class=\"field\">Lugar<input name=\"location\" maxlength=\"120\" value=\"" + escapeHtml(current ? current.location : "") + "\"></label>" +
+      "<label class=\"field wide\">Dirección<textarea name=\"address\" maxlength=\"300\" rows=\"3\">" + escapeHtml(current ? current.address : "") + "</textarea></label>" +
+      "<label class=\"field\">Fecha<input name=\"date\" type=\"date\" value=\"" + escapeHtml(current ? current.date : "") + "\"></label>" +
+      "<label class=\"field\">Hora<input name=\"time\" type=\"time\" value=\"" + escapeHtml(current ? current.time : "") + "\"></label>" +
+      cupRich("cup-info-input", "Información del torneo") +
+      "<div class=\"wide\"><span class=\"field-label\">Canchas</span><p class=\"field-hint\">Hasta 6 canchas. Al armar el cuadro, los partidos se reparten entre estas canchas.</p><div id=\"cup-fields\" class=\"cup-fields\">" + fields.map(function (name, index) { return cupFieldRow(name, index); }).join("") + "</div></div>" +
+      "<div class=\"location-actions wide\"><button class=\"btn btn-ghost\" type=\"button\" id=\"add-cup-field\">Agregar cancha</button><span class=\"location-actions-space\"></span><button class=\"btn\" type=\"submit\">" + (current ? "Guardar torneo" : "Agregar torneo") + "</button>" + (current ? "<button class=\"btn btn-ghost\" type=\"button\" id=\"cancel-cup\">Cancelar</button>" : "") + "</div></form>";
+  }
+
+  function tournamentFormSection() {
+    var open = cupFormOpen;
+    var label = editingCup ? "Editar torneo" : "Agregar torneo";
+    return "<div class=\"cup-add" + (open ? " is-open" : "") + "\"><button type=\"button\" class=\"roster-toggle\" id=\"cup-form-toggle\" aria-expanded=\"" + (open ? "true" : "false") + "\" aria-controls=\"cup-form-body\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 9l6 6 6-6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg>" + label + "</button><div id=\"cup-form-body\"" + (open ? "" : " hidden") + ">" + (open ? tournamentFormHtml() : "") + "</div></div>";
+  }
+
+  function tournamentRows() {
+    if (!cups.length) return "<tr><td colspan=\"6\">Todavía no hay torneos.</td></tr>";
+    return cups.map(function (cup) {
+      return "<tr><td>" + escapeHtml(cup.name) + "</td><td>" + escapeHtml(cup.location || "") + "</td><td>" + escapeHtml(cup.date || "") + "</td><td>" + escapeHtml(cup.time || "") + "</td><td>" + escapeHtml((cup.fields || []).join(", ")) + "</td><td><div class=\"benefit-actions\"><button class=\"btn btn-ghost\" type=\"button\" data-edit-cup=\"" + escapeHtml(cup.id) + "\">Editar</button><button class=\"btn btn-ghost\" type=\"button\" data-remove-cup=\"" + escapeHtml(cup.id) + "\">Quitar</button></div></td></tr>";
+    }).join("");
+  }
+
+  var cupFormats = {
+    8: "Grupos A y B de 4, semifinales, final y tercer puesto",
+    12: "4 grupos de 3, cuartos, semifinales, final y tercer puesto",
+    16: "4 grupos de 4, cuartos, semifinales, final y tercer puesto",
+    20: "4 grupos de 5, cuartos, semifinales, final y tercer puesto",
+    24: "6 grupos de 4, octavos, cuartos, semifinales, final y tercer puesto"
+  };
+
+  function selectedTeamIds() {
+    return cupTeams.filter(function (team) { return selectedCupTeams[team.id]; }).map(function (team) { return team.id; });
+  }
+
+  function teamFormSection() {
+    var open = teamFormOpen;
+    var label = editingCupTeam ? "Editar equipo" : "Agregar equipo";
+    return "<div class=\"cup-add" + (open ? " is-open" : "") + "\"><button type=\"button\" class=\"roster-toggle\" id=\"team-form-toggle\" aria-expanded=\"" + (open ? "true" : "false") + "\" aria-controls=\"team-form-body\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 9l6 6 6-6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg>" + label + "</button><div id=\"team-form-body\"" + (open ? "" : " hidden") + ">" + (open ? teamFormHtml() : "") + "</div></div>";
+  }
+
+  function teamBracketBar() {
+    var ids = selectedTeamIds();
+    if (!ids.length) return "";
+    var format = cupFormats[ids.length] || "";
+    var options = format
+      ? "<option value=\"" + ids.length + "\">" + escapeHtml(format) + "</option>"
+      : "<option value=\"\">Elige 8, 12, 16, 20 o 24 equipos</option>";
+    return "<div class=\"cup-bracket-bar\"><p><strong>" + ids.length + "</strong> " + (ids.length === 1 ? "equipo seleccionado." : "equipos seleccionados.") + " Elige el torneo y el tipo de cuadro. Los partidos quedan en Partidos.</p><label class=\"field\">Torneo<select id=\"selected-tournament\">" + cupSelect(selectedBracketTournament, "Elige un torneo") + "</select></label><div class=\"admin-actions\"><button class=\"btn\" type=\"button\" id=\"build-selected-bracket\"" + (format ? "" : " disabled") + ">Armar partidos</button></div><label class=\"field cup-format\">Tipo de cuadro<select id=\"selected-format\"" + (format ? "" : " disabled") + ">" + options + "</select></label><p id=\"selected-build-error\" class=\"form-error\" role=\"alert\" hidden></p></div>";
+  }
+
+  function paintTeamBracket() {
+    var slot = document.getElementById("team-bracket-slot");
+    if (!slot) return;
+    var current = document.getElementById("selected-tournament");
+    if (current) selectedBracketTournament = current.value;
+    slot.innerHTML = teamBracketBar();
+    var count = selectedTeamIds().length;
+    var all = document.getElementById("team-select-all");
+    if (all) {
+      all.checked = cupTeams.length > 0 && count === cupTeams.length;
+      all.indeterminate = count > 0 && count < cupTeams.length;
+    }
+  }
+
+  function teamFormHtml() {
+    var current = editingCupTeam ? cupTeamById(editingCupTeam) : null;
+    return "<form id=\"team-form\" class=\"form-grid\"><h2 class=\"wide\">" + (current ? "Editar equipo" : "Nuevo equipo") + "</h2><p id=\"team-error\" class=\"form-error wide\" role=\"alert\" hidden></p>" +
+      "<label class=\"field\">Nombre del equipo<input name=\"name\" required maxlength=\"80\" value=\"" + escapeHtml(current ? current.name : "") + "\"></label>" +
+      "<label class=\"field\">Torneo<select name=\"tournament\">" + cupSelect(current ? current.tournamentId : "", "No aplica") + "</select></label>" +
+      cupRich("team-info-input", "Información del equipo") +
+      "<div class=\"wide\"><span class=\"field-label\">Logo</span><div id=\"team-logo-drop\" class=\"photo-drop\"><p>Suelta el logo aquí o elige un archivo.</p><p class=\"field-hint\">Una imagen JPG, PNG o WebP. Haz clic en el logo para acercarlo y recortarlo.</p><button class=\"btn btn-ghost\" type=\"button\" id=\"team-logo-add\">Elegir logo</button><input id=\"team-logo-file\" type=\"file\" accept=\"image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp\" hidden></div><div class=\"photo-list\"><figure id=\"team-logo-figure\" hidden><button class=\"photo-thumb\" type=\"button\" id=\"team-logo-edit\" aria-label=\"Recortar logo\"><img id=\"team-logo-preview\" alt=\"\"></button><button type=\"button\" id=\"team-logo-remove\">Quitar</button></figure></div><p id=\"team-logo-empty\" class=\"field-hint\">Todavía no hay logo.</p><p id=\"team-logo-status\" class=\"photo-status\" role=\"status\"></p></div>" +
+      "<div class=\"admin-actions wide\"><button class=\"btn\" type=\"submit\">" + (current ? "Guardar equipo" : "Agregar equipo") + "</button>" + (current ? "<button class=\"btn btn-ghost\" type=\"button\" id=\"cancel-team\">Cancelar</button>" : "") + "</div></form>";
+  }
+
+  function teamRows() {
+    if (!cupTeams.length) return "<tr><td colspan=\"5\">Todavía no hay equipos.</td></tr>";
+    return cupTeams.map(function (team) {
+      var thumb = team.logo
+        ? "<img class=\"benefit-row-photo\" src=\"" + escapeHtml(cupTeamLogoSrc(team)) + "\" alt=\"\">"
+        : "<span class=\"benefit-row-photo is-empty\"></span>";
+      var selected = selectedCupTeams[team.id] ? " checked" : "";
+      return "<tr" + (selected ? " class=\"is-selected\"" : "") + "><td class=\"benefit-check\"><input type=\"checkbox\" data-select-team=\"" + escapeHtml(team.id) + "\" aria-label=\"Seleccionar " + escapeHtml(team.name) + "\"" + selected + "></td><td class=\"benefit-thumb\">" + thumb + "</td><td>" + escapeHtml(team.name) + "</td><td>" + escapeHtml(cupName(team.tournamentId)) + "</td><td><div class=\"benefit-actions\"><button class=\"btn btn-ghost\" type=\"button\" data-move-team=\"" + escapeHtml(team.id) + "\" data-move-dir=\"-1\">Subir</button><button class=\"btn btn-ghost\" type=\"button\" data-move-team=\"" + escapeHtml(team.id) + "\" data-move-dir=\"1\">Bajar</button><button class=\"btn btn-ghost\" type=\"button\" data-edit-team=\"" + escapeHtml(team.id) + "\">Editar</button><button class=\"btn btn-ghost\" type=\"button\" data-remove-team=\"" + escapeHtml(team.id) + "\">Quitar</button></div></td></tr>";
+    }).join("");
+  }
+
+  function matchSide(teamId, label) {
+    var team = cupTeamById(teamId);
+    if (!team) return escapeHtml(label || "Por definir");
+    var logo = team.logo ? "<img class=\"cup-mini\" src=\"" + escapeHtml(cupTeamLogoSrc(team)) + "\" alt=\"\">" : "";
+    return "<span class=\"cup-mini-side\">" + logo + escapeHtml(team.name) + "</span>";
+  }
+
+  function matchFormHtml() {
+    var current = editingCupMatch ? cupMatchById(editingCupMatch) : null;
+    var tournamentId = current ? current.tournamentId : (cups[0] ? cups[0].id : "");
+    return "<form id=\"match-form\" class=\"form-grid\"><h2 class=\"wide\">" + (current ? "Editar partido" : "Nuevo partido") + "</h2><p id=\"match-error\" class=\"form-error wide\" role=\"alert\" hidden></p>" +
+      "<label class=\"field wide\">Torneo<select id=\"match-tournament\" name=\"tournament\" required>" + cupSelect(tournamentId, "Elige un torneo") + "</select></label>" +
+      "<div class=\"wide cup-versus\"><div class=\"cup-side\"><label class=\"field\">Equipo 1<img id=\"match-logo-1\" class=\"cup-form-logo\" alt=\"\" hidden><select id=\"match-team-1\" name=\"team1\">" + cupTeamOptions(tournamentId, current ? current.team1Id : "") + "</select></label></div><span class=\"cup-vs\">vs</span><div class=\"cup-side\"><label class=\"field\">Equipo 2<img id=\"match-logo-2\" class=\"cup-form-logo\" alt=\"\" hidden><select id=\"match-team-2\" name=\"team2\">" + cupTeamOptions(tournamentId, current ? current.team2Id : "") + "</select></label></div></div>" +
+      (current && (current.label1 || current.label2) ? "<p class=\"field-hint wide\">Clasificación: " + escapeHtml(current.label1 || "Por definir") + " vs " + escapeHtml(current.label2 || "Por definir") + ". Puedes dejar el equipo vacío hasta que se defina.</p>" : "") +
+      "<label class=\"field\">Cancha<input name=\"field\" maxlength=\"80\" list=\"match-fields\" value=\"" + escapeHtml(current ? current.field : "") + "\"><datalist id=\"match-fields\"></datalist></label>" +
+      "<label class=\"field\">Fecha<input name=\"date\" type=\"date\" value=\"" + escapeHtml(current ? current.date : "") + "\"></label>" +
+      "<label class=\"field\">Hora<input name=\"time\" type=\"time\" value=\"" + escapeHtml(current ? current.time : "") + "\"></label>" +
+      "<div class=\"admin-actions wide\"><button class=\"btn\" type=\"submit\">" + (current ? "Guardar partido" : "Agregar partido") + "</button>" + (current ? "<button class=\"btn btn-ghost\" type=\"button\" id=\"cancel-match\">Cancelar</button>" : "") + "</div></form>";
+  }
+
+  function matchStageKey(match) {
+    return match.stage + (match.group ? ":" + match.group : "");
+  }
+
+  function matchStageLabel(match) {
+    var stage = cupStages[match.stage] || "Partido";
+    if (match.group) stage += " " + match.group;
+    return stage;
+  }
+
+  function matchTeamText(teamId, label) {
+    var team = cupTeamById(teamId);
+    return team ? team.name : (label || "Por definir");
+  }
+
+  function visibleMatches() {
+    var tournament = matchFilters.tournament.trim().toLowerCase();
+    var team1 = matchFilters.team1.trim().toLowerCase();
+    var team2 = matchFilters.team2.trim().toLowerCase();
+    var field = matchFilters.field.trim().toLowerCase();
+    var time = matchFilters.time.trim().toLowerCase();
+    return cupMatches.filter(function (match) {
+      if (tournament && cupName(match.tournamentId).toLowerCase().indexOf(tournament) === -1) return false;
+      if (matchFilters.stage && matchStageKey(match) !== matchFilters.stage) return false;
+      if (team1 && matchTeamText(match.team1Id, match.label1).toLowerCase().indexOf(team1) === -1) return false;
+      if (team2 && matchTeamText(match.team2Id, match.label2).toLowerCase().indexOf(team2) === -1) return false;
+      if (field && (match.field || "").toLowerCase().indexOf(field) === -1) return false;
+      if (matchFilters.date && match.date !== matchFilters.date) return false;
+      if (time && (match.time || "").toLowerCase().indexOf(time) === -1) return false;
+      return true;
+    });
+  }
+
+  function matchFilterCell(label, key, control) {
+    var active = String(matchFilters[key] || "").trim() !== "";
+    var classes = ["match-col-" + key];
+    if (active) classes.push("is-filtered");
+    return "<th class=\"" + classes.join(" ") + "\"><span>" + escapeHtml(label) + "</span>" + control + "</th>";
+  }
+
+  function matchStageOptions() {
+    var seen = {};
+    var html = "<option value=\"\">Todas</option>";
+    cupMatches.forEach(function (match) {
+      var key = matchStageKey(match);
+      if (seen[key]) return;
+      seen[key] = true;
+      html += "<option value=\"" + escapeHtml(key) + "\"" + (matchFilters.stage === key ? " selected" : "") + ">" + escapeHtml(matchStageLabel(match)) + "</option>";
+    });
+    return html;
+  }
+
+  function matchShownColumns() {
+    return matchColumnDefs.filter(function (column) { return !hiddenMatchColumns[column[0]]; });
+  }
+
+  function saveMatchColumns() {
+    try {
+      localStorage.setItem("gfc-admin-match-columns", matchColumnsOpen ? "open" : "closed");
+      localStorage.setItem("gfc-admin-match-hidden", JSON.stringify(hiddenMatchColumns));
+    } catch (error) {}
+  }
+
+  function matchCell(match, key) {
+    if (key === "tournament") return escapeHtml(cupName(match.tournamentId));
+    if (key === "stage") return escapeHtml(matchStageLabel(match));
+    if (key === "team1") return matchSide(match.team1Id, match.label1);
+    if (key === "team2") return matchSide(match.team2Id, match.label2);
+    if (key === "field") return escapeHtml(match.field || "");
+    if (key === "date") return escapeHtml(match.date || "");
+    if (key === "time") return escapeHtml(match.time || "");
+    return "<div class=\"benefit-actions\"><button class=\"btn btn-ghost\" type=\"button\" data-edit-match=\"" + escapeHtml(match.id) + "\">Editar</button><button class=\"btn btn-ghost\" type=\"button\" data-remove-match=\"" + escapeHtml(match.id) + "\">Quitar</button></div>";
+  }
+
+  function matchRows() {
+    var columns = matchShownColumns();
+    var span = columns.length || 1;
+    if (!cupMatches.length) return "<tr><td colspan=\"" + span + "\">Todavía no hay partidos.</td></tr>";
+    var shown = visibleMatches();
+    if (!shown.length) return "<tr><td colspan=\"" + span + "\">Ningún partido coincide con el filtro.</td></tr>";
+    return shown.map(function (match) {
+      return "<tr>" + columns.map(function (column) { return "<td class=\"match-col-" + column[0] + "\">" + matchCell(match, column[0]) + "</td>"; }).join("") + "</tr>";
+    }).join("");
+  }
+
+  function paintMatchRows() {
+    var body = document.querySelector("#match-table tbody");
+    if (!body) return;
+    body.innerHTML = matchRows();
+  }
+
+  function matchToolsSection() {
+    var open = matchToolsOpen;
+    var label = editingCupMatch ? "Editar partido" : "Armar y agregar partidos";
+    var icon = "<svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M6 9l6 6 6-6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg>";
+    return "<div class=\"cup-add" + (open ? " is-open" : "") + "\"><button type=\"button\" class=\"roster-toggle\" id=\"match-tools-toggle\" aria-expanded=\"" + (open ? "true" : "false") + "\" aria-controls=\"match-tools-body\">" + icon + label + "</button><div id=\"match-tools-body\"" + (open ? "" : " hidden") + ">" + (open ? matchToolsHtml() : "") + "</div></div>";
+  }
+
+  function matchToolsHtml() {
+    return "<div class=\"cup-build\"><h2>Armar el cuadro</h2><p>Con 8, 12, 16, 20 o 24 equipos se arma la fase de grupos y luego la eliminatoria. Cada victoria suma 3 puntos y un empate suma 1. Si hay empate en el grupo, se mira la diferencia de goles, los goles a favor, el resultado entre los equipos y, al final, un sorteo. En la eliminatoria, el empate se define por penales. Con hasta 6 canchas, los partidos quedan cada 25 minutos desde la fecha y la hora del torneo.</p><label class=\"field\">Torneo<select id=\"build-tournament\">" + cupSelect("", "Elige un torneo") + "</select></label><div class=\"admin-actions\"><button class=\"btn\" type=\"button\" id=\"build-bracket\">Armar partidos</button></div><p id=\"build-error\" class=\"form-error\" role=\"alert\" hidden></p></div>" + matchFormHtml();
+  }
+
+  function matchViewButton(id, label) {
+    var current = matchView === id;
+    return "<button type=\"button\" class=\"squad-sheet" + (current ? " is-active" : "") + "\" role=\"tab\" data-match-view=\"" + id + "\" aria-selected=\"" + (current ? "true" : "false") + "\">" + label + "</button>";
+  }
+
+  function matchHeadCell(column) {
+    if (column[0] === "actions") return "<th class=\"match-col-actions\">Acciones</th>";
+    if (column[0] === "stage") return matchFilterCell(column[1], "stage", "<select class=\"roster-filter\" data-match-filter=\"stage\" aria-label=\"Filtrar fase\">" + matchStageOptions() + "</select>");
+    var type = column[0] === "date" ? "date" : "search";
+    var extra = type === "search" ? " placeholder=\"Filtrar\"" : "";
+    return matchFilterCell(column[1], column[0], "<input class=\"roster-filter\" data-match-filter=\"" + column[0] + "\" type=\"" + type + "\"" + extra + " aria-label=\"Filtrar " + escapeHtml(column[1].toLowerCase()) + "\" value=\"" + escapeHtml(matchFilters[column[0]] || "") + "\">");
+  }
+
+  function matchColumnPicker() {
+    return matchColumnDefs.map(function (column) {
+      var filtered = column[0] !== "actions" && String(matchFilters[column[0]] || "").trim() !== "";
+      return "<li" + (filtered ? " class=\"is-filtered\"" : "") + "><label><input type=\"checkbox\" data-match-column=\"" + column[0] + "\"" + (hiddenMatchColumns[column[0]] ? "" : " checked") + ">" + escapeHtml(column[1]) + "</label><span class=\"roster-filter-mark\" title=\"Filtro activo\" aria-hidden=\"true\"></span></li>";
+    }).join("");
+  }
+
+  function matchTable() {
+    var columns = matchShownColumns();
+    return "<div class=\"match-board\"><div class=\"benefit-table-wrap\"><table class=\"benefit-table\" id=\"match-table\"><thead><tr>" +
+      columns.map(matchHeadCell).join("") +
+      "</tr></thead><tbody>" + matchRows() + "</tbody></table></div><aside class=\"roster-columns" + (matchColumnsOpen ? "" : " is-collapsed") + "\" aria-labelledby=\"match-columns-title\"><div class=\"roster-columns-head\"><button type=\"button\" class=\"columns-toggle\" id=\"match-columns-toggle\" aria-expanded=\"" + (matchColumnsOpen ? "true" : "false") + "\" aria-controls=\"match-column-body\" aria-label=\"" + (matchColumnsOpen ? "Ocultar columnas" : "Mostrar columnas") + "\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 6l6 6-6 6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></button><p id=\"match-columns-title\" class=\"roster-columns-title\">Columnas</p></div><div id=\"match-column-body\"><p class=\"roster-columns-note\">Marca las columnas que quieres ver en la tabla.</p><ul>" + matchColumnPicker() + "</ul></div></aside></div>";
+  }
+
+  function bracketTournamentId() {
+    if (bracketCup && cupById(bracketCup)) return bracketCup;
+    var found = cups.filter(function (cup) {
+      return cupMatches.some(function (match) { return match.tournamentId === cup.id; });
+    })[0];
+    return found ? found.id : (cups[0] ? cups[0].id : "");
+  }
+
+  function bracketSlot(teamId, label) {
+    var team = cupTeamById(teamId);
+    var name = team ? team.name : (label || "Por definir");
+    var src = cupTeamLogoSrc(team);
+    var image = src ? "<img src=\"" + escapeHtml(src) + "\" alt=\"\">" : "";
+    return "<div class=\"bracket-slot" + (team ? "" : " is-open") + "\">" + image + "<span>" + escapeHtml(name) + "</span></div>";
+  }
+
+  function orderedStage(matches, stage) {
+    return matches.map(function (match, index) { return { match: match, index: index }; }).filter(function (item) {
+      return item.match.stage === stage;
+    }).sort(function (a, b) {
+      return (a.match.round || 0) - (b.match.round || 0) || a.index - b.index;
+    }).map(function (item) { return item.match; });
+  }
+
+  function groupMembers(matches, letter, tournamentId) {
+    var ids = {};
+    matches.forEach(function (match) {
+      if (match.stage !== "group" || match.group !== letter) return;
+      if (match.team1Id) ids[match.team1Id] = true;
+      if (match.team2Id) ids[match.team2Id] = true;
+    });
+    return cupTeams.filter(function (team) {
+      return team.tournamentId === tournamentId && ids[team.id];
+    }).map(function (team) { return { id: team.id, label: "" }; });
+  }
+
+  function bracketMatch(match, title) {
+    return "<div class=\"bracket-match\"><span class=\"bracket-round\">" + escapeHtml(title) + "</span>" + bracketSlot(match.team1Id, match.label1) + bracketSlot(match.team2Id, match.label2) + "</div>";
+  }
+
+  function bracketGroup(letter, matches, tournamentId) {
+    var members = groupMembers(matches, letter, tournamentId);
+    return "<section class=\"bracket-group\"><div class=\"bracket-group-teams\">" + members.map(function (member) {
+      return bracketSlot(member.id, member.label);
+    }).join("") + "</div><svg class=\"bracket-brace\" viewBox=\"0 0 120 28\" preserveAspectRatio=\"none\" aria-hidden=\"true\"><path d=\"M3 3v7c0 5 7 7 16 7h27c7 0 9 5 14 9 5-4 7-9 14-9h27c9 0 16-2 16-7V3\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"/></svg><p>Grupo " + escapeHtml(letter) + "</p></section>";
+  }
+
+  function bracketBoard(tournamentId) {
+    var matches = cupMatches.filter(function (match) { return match.tournamentId === tournamentId; });
+    if (!matches.length) return "<p class=\"bracket-empty\">Este torneo todavía no tiene partidos.</p>";
+    var titles = { final: "Final", semi: "Semifinal", quarter: "Cuartos", r16: "Octavos" };
+    var rounds = ["final", "semi", "quarter", "r16"].filter(function (stage) {
+      return matches.some(function (match) { return match.stage === stage; });
+    });
+    var letters = [];
+    matches.forEach(function (match) {
+      if (match.stage === "group" && match.group && letters.indexOf(match.group) === -1) letters.push(match.group);
+    });
+    letters.sort();
+    var trophy = "<div class=\"bracket-trophy\" aria-hidden=\"true\"><svg viewBox=\"0 0 64 72\"><path d=\"M20 8h24v10c0 8-5 14-12 14s-12-6-12-14V8z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\"/><path d=\"M20 14H12c0 7 4 11 8 12M44 14h8c0 7-4 11-8 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\"/><path d=\"M32 32v8M22 54h20M25 40h14v8H25z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linejoin=\"round\"/></svg></div>";
+    function branch(level, index) {
+      var rows = orderedStage(matches, rounds[level]);
+      var match = rows[index];
+      if (!match) return "";
+      var below = "";
+      if (level < rounds.length - 1) {
+        below = "<div class=\"bracket-join\" aria-hidden=\"true\"></div><div class=\"bracket-columns\">" + branch(level + 1, index * 2) + branch(level + 1, index * 2 + 1) + "</div>";
+      } else if (letters.length === rows.length && letters[index]) {
+        below = "<div class=\"bracket-join\" aria-hidden=\"true\"></div>" + bracketGroup(letters[index], matches, tournamentId);
+      }
+      return "<div class=\"bracket-branch\">" + bracketMatch(match, titles[rounds[level]]) + below + "</div>";
+    }
+    var html = trophy;
+    if (rounds.length) html += branch(0, 0);
+    else if (letters.length) html += "<div class=\"bracket-columns\">" + letters.map(function (letter) { return bracketGroup(letter, matches, tournamentId); }).join("") + "</div>";
+    else html += "<div class=\"bracket-columns\">" + orderedStage(matches, "match").map(function (match) { return bracketMatch(match, "Partido"); }).join("") + "</div>";
+    var third = orderedStage(matches, "third")[0];
+    if (third) html += "<div class=\"bracket-third\"><p>Tercer puesto</p>" + bracketMatch(third, "vs") + "</div>";
+    return "<div class=\"bracket\">" + html + "</div>";
+  }
+
+  function bracketPanel() {
+    var tournamentId = bracketTournamentId();
+    var picker = cups.length ? "<label class=\"field\">Torneo<select id=\"bracket-cup\">" + cupSelect(tournamentId, "Elige un torneo") + "</select></label>" : "";
+    return picker + "<div id=\"bracket-board\">" + (tournamentId ? bracketBoard(tournamentId) : "<p class=\"bracket-empty\">Agrega un torneo para ver el cuadro.</p>") + "</div>";
+  }
+
+  function cupSheetButton(id, label) {
+    var current = tournamentSheet === id;
+    return "<button type=\"button\" class=\"squad-sheet" + (current ? " is-active" : "") + "\" role=\"tab\" data-cup-sheet=\"" + id + "\" aria-selected=\"" + (current ? "true" : "false") + "\">" + label + "</button>";
+  }
+
+  function tournamentsPanel() {
+    var page = siteTabs.filter(function (item) { return item.id === "torneos"; })[0];
+    var sheets = "<div class=\"squad-sheets\" role=\"tablist\" aria-label=\"Secciones del torneo\">" + cupSheetButton("torneos", "Torneos") + cupSheetButton("equipos", "Equipos") + cupSheetButton("partidos", "Partidos") + "</div>";
+    var body = "";
+    if (tournamentSheet === "equipos") {
+      body = "<article class=\"panel-card benefits-admin\"><p>Los equipos seleccionados entran al cuadro en este orden. Sube o baja un equipo para cambiar su grupo.</p>" + teamFormSection() + "<div id=\"team-bracket-slot\">" + teamBracketBar() + "</div><div class=\"benefit-table-wrap\"><table class=\"benefit-table\"><thead><tr><th class=\"benefit-check\"><input type=\"checkbox\" id=\"team-select-all\" aria-label=\"Seleccionar todos los equipos\"></th><th>Logo</th><th>Nombre del equipo</th><th>Torneo</th><th>Acciones</th></tr></thead><tbody>" + teamRows() + "</tbody></table></div></article>";
+    } else if (tournamentSheet === "partidos") {
+      body = "<article class=\"panel-card benefits-admin\">" + matchToolsSection() + "<div class=\"squad-sheets cup-view-sheets\" role=\"tablist\" aria-label=\"Vista de partidos\">" + matchViewButton("lista", "Lista") + matchViewButton("cuadro", "Cuadro") + "</div>" + (matchView === "cuadro" ? bracketPanel() : matchTable()) + "</article>";
+    } else {
+      body = "<article class=\"panel-card benefits-admin\">" + tournamentFormSection() + "<div class=\"benefit-table-wrap\"><table class=\"benefit-table\"><thead><tr><th>Nombre del torneo</th><th>Lugar</th><th>Fecha</th><th>Hora</th><th>Canchas</th><th>Acciones</th></tr></thead><tbody>" + tournamentRows() + "</tbody></table></div></article>";
+    }
+    return sitePanel(page) + sheets + body;
+  }
+
+  function paintTeamLogo() {
+    var figure = document.getElementById("team-logo-figure");
+    var empty = document.getElementById("team-logo-empty");
+    var img = document.getElementById("team-logo-preview");
+    if (!figure || !img) return;
+    var src = teamLogoData;
+    if (!src && !teamLogoRemoved && editingCupTeam) src = cupTeamLogoSrc(cupTeamById(editingCupTeam));
+    figure.hidden = !src;
+    empty.hidden = Boolean(src);
+    if (src) img.src = src;
+  }
+
+  function paintMatchSide(selectId, imgId) {
+    var select = document.getElementById(selectId);
+    var img = document.getElementById(imgId);
+    if (!select || !img) return;
+    var team = cupTeamById(select.value);
+    var src = cupTeamLogoSrc(team);
+    img.hidden = !src;
+    if (src) img.src = src;
+  }
+
+  function paintMatchTeams(clearTeams) {
+    var cupSelect = document.getElementById("match-tournament");
+    if (!cupSelect) return;
+    var tournamentId = cupSelect.value;
+    [1, 2].forEach(function (side) {
+      var select = document.getElementById("match-team-" + side);
+      if (!select) return;
+      var current = clearTeams ? "" : select.value;
+      var team = cupTeamById(current);
+      if (team && team.tournamentId !== tournamentId) current = "";
+      select.innerHTML = cupTeamOptions(tournamentId, current);
+      paintMatchSide("match-team-" + side, "match-logo-" + side);
+    });
+    var list = document.getElementById("match-fields");
+    var cup = cupById(tournamentId);
+    if (list) list.innerHTML = cup && cup.fields ? cup.fields.map(function (field) { return "<option value=\"" + escapeHtml(field) + "\"></option>"; }).join("") : "";
+  }
+
+  function bindTournamentEditors() {
+    var cup = editingCup ? cupById(editingCup) : null;
+    var team = editingCupTeam ? cupTeamById(editingCupTeam) : null;
+    fillRich("cup-info-input", cup ? cup.info : "");
+    fillRich("team-info-input", team ? team.info : "");
+    paintTeamLogo();
+    paintMatchTeams(false);
+    var zone = document.getElementById("team-logo-drop");
+    var file = document.getElementById("team-logo-file");
+    if (zone) {
+      zone.addEventListener("dragover", function (event) {
+        event.preventDefault();
+        zone.classList.add("is-over");
+      });
+      zone.addEventListener("dragleave", function (event) {
+        if (zone.contains(event.relatedTarget)) return;
+        zone.classList.remove("is-over");
+      });
+      zone.addEventListener("drop", function (event) {
+        event.preventDefault();
+        zone.classList.remove("is-over");
+        readTeamLogo(event.dataTransfer && event.dataTransfer.files && event.dataTransfer.files[0]);
+      });
+    }
+    if (file) {
+      file.addEventListener("change", function () {
+        var picked = file.files && file.files[0];
+        file.value = "";
+        readTeamLogo(picked);
+      });
+    }
+    var matchCup = document.getElementById("match-tournament");
+    if (matchCup) matchCup.addEventListener("change", function () { paintMatchTeams(true); });
+    [1, 2].forEach(function (side) {
+      var select = document.getElementById("match-team-" + side);
+      if (select) select.addEventListener("change", function () { paintMatchSide("match-team-" + side, "match-logo-" + side); });
+    });
+  }
+
+  function readTeamLogo(file) {
+    if (!file) return;
+    setCupError("team-error", "");
+    var status = document.getElementById("team-logo-status");
+    if (status) status.textContent = "";
+    readPhotoFile(file).then(openTeamLogoEditor).catch(function (error) {
+      if (status) status.textContent = error.message || "El logo no se pudo leer.";
+    });
+  }
+
+  function submitCup(form) {
+    if (cupSaveBusy) return;
+    var data = new FormData(form);
+    var name = String(data.get("name") || "").trim();
+    if (!name) return setCupError("cup-error", "Escribe el nombre del torneo.");
+    var fields = [];
+    data.getAll("field").forEach(function (field) {
+      var text = String(field || "").trim();
+      if (text && fields.indexOf(text) === -1) fields.push(text);
+    });
+    if (fields.length > 6) return setCupError("cup-error", "Un torneo admite hasta 6 canchas.");
+    var current = editingCup ? cupById(editingCup) : null;
+    var next = {
+      id: current ? current.id : "c-" + Date.now().toString(36),
+      name: name,
+      location: String(data.get("location") || "").trim(),
+      address: String(data.get("address") || "").trim(),
+      date: String(data.get("date") || ""),
+      time: String(data.get("time") || ""),
+      info: cupRichValue("cup-info-input"),
+      fields: fields
+    };
+    var list = cups.map(function (item) { return item.id === next.id ? next : item; });
+    if (!current) list = cups.concat([next]);
+    cupSaveBusy = true;
+    saveCup({ tournaments: list, teams: cupTeams, matches: cupMatches }, "Torneo guardado.").then(function (result) {
+      cupSaveBusy = false;
+      if (!result.ok) return setCupError("cup-error", result.data.error || "No se pudo guardar el torneo.");
+      editingCup = "";
+      cupFormOpen = false;
+      render();
+    }).catch(function () {
+      cupSaveBusy = false;
+      setCupError("cup-error", "No se pudo guardar el torneo.");
+    });
+  }
+
+  function submitCupTeam(form) {
+    if (cupSaveBusy) return;
+    var data = new FormData(form);
+    var name = String(data.get("name") || "").trim();
+    if (!name) return setCupError("team-error", "Escribe el nombre del equipo.");
+    var info = cupRichValue("team-info-input");
+    if (notesText(info).length > 4000) return setCupError("team-error", "La información del equipo admite hasta 4000 caracteres.");
+    var current = editingCupTeam ? cupTeamById(editingCupTeam) : null;
+    var id = current ? current.id : "tm-" + Date.now().toString(36);
+    var logo = teamLogoRemoved ? "" : (current ? current.logo : "");
+    cupSaveBusy = true;
+    var button = form.querySelector("button[type=\"submit\"]");
+    if (button) button.disabled = true;
+    var ready = teamLogoData
+      ? api("/api/admin/tournaments/photo", "POST", { id: id, data: teamLogoData }).then(function (result) {
+        if (!result.ok) throw new Error(result.data.error || "El logo no se pudo guardar.");
+        logo = result.data.file;
+      })
+      : Promise.resolve();
+    ready.then(function () {
+      var next = { id: id, name: name, info: info, logo: logo, tournamentId: String(data.get("tournament") || "") };
+      var list = cupTeams.map(function (item) { return item.id === id ? next : item; });
+      if (!current) list = cupTeams.concat([next]);
+      return saveCup({ tournaments: cups, teams: list, matches: cupMatches }, "Equipo guardado.");
+    }).then(function (result) {
+      cupSaveBusy = false;
+      if (!result || !result.ok) {
+        if (button) button.disabled = false;
+        setCupError("team-error", (result && result.data && result.data.error) || "No se pudo guardar el equipo.");
+        return;
+      }
+      editingCupTeam = "";
+      teamLogoData = "";
+      teamLogoRemoved = false;
+      teamFormOpen = false;
+      render();
+    }).catch(function (error) {
+      cupSaveBusy = false;
+      if (button) button.disabled = false;
+      setCupError("team-error", error.message || "No se pudo guardar el equipo.");
+    });
+  }
+
+  function submitCupMatch(form) {
+    if (cupSaveBusy) return;
+    var data = new FormData(form);
+    var tournamentId = String(data.get("tournament") || "");
+    var team1Id = String(data.get("team1") || "");
+    var team2Id = String(data.get("team2") || "");
+    var field = String(data.get("field") || "").trim();
+    var date = String(data.get("date") || "");
+    var time = String(data.get("time") || "");
+    if (!tournamentId) return setCupError("match-error", "Elige un torneo.");
+    if (team1Id && team1Id === team2Id) return setCupError("match-error", "Elige dos equipos distintos.");
+    if (!current && (!team1Id || !team2Id)) return setCupError("match-error", "Elige dos equipos distintos.");
+    if (current && !team1Id && !current.label1) return setCupError("match-error", "Elige el equipo 1.");
+    if (current && !team2Id && !current.label2) return setCupError("match-error", "Elige el equipo 2.");
+    if (!field || !date || !time) return setCupError("match-error", "Escribe la cancha, la fecha y la hora.");
+    var current = editingCupMatch ? cupMatchById(editingCupMatch) : null;
+    var next = {
+      id: current ? current.id : "m-" + Date.now().toString(36),
+      tournamentId: tournamentId,
+      stage: current && current.stage ? current.stage : "match",
+      group: current ? current.group || "" : "",
+      round: current && current.round ? current.round : 0,
+      team1Id: team1Id,
+      team2Id: team2Id,
+      label1: current ? current.label1 || "" : "",
+      label2: current ? current.label2 || "" : "",
+      field: field,
+      date: date,
+      time: time
+    };
+    var list = cupMatches.map(function (item) { return item.id === next.id ? next : item; });
+    if (!current) list = cupMatches.concat([next]);
+    cupSaveBusy = true;
+    saveCup({ tournaments: cups, teams: cupTeams, matches: list }, "Partido guardado.").then(function (result) {
+      cupSaveBusy = false;
+      if (!result.ok) return setCupError("match-error", result.data.error || "No se pudo guardar el partido.");
+      editingCupMatch = "";
+      matchToolsOpen = false;
+      render();
+    }).catch(function () {
+      cupSaveBusy = false;
+      setCupError("match-error", "No se pudo guardar el partido.");
+    });
+  }
+
+  function moveCupTeam(id, dir) {
+    var team = cupTeamById(id);
+    if (!team || cupSaveBusy) return;
+    var same = cupTeams.filter(function (item) { return item.tournamentId === team.tournamentId; });
+    var index = -1;
+    for (var i = 0; i < same.length; i += 1) if (same[i].id === id) index = i;
+    var target = index + dir;
+    if (index < 0 || target < 0 || target >= same.length) return;
+    var list = cupTeams.slice();
+    var from = -1;
+    var to = -1;
+    for (var j = 0; j < list.length; j += 1) {
+      if (list[j].id === id) from = j;
+      if (list[j].id === same[target].id) to = j;
+    }
+    var swap = list[from];
+    list[from] = list[to];
+    list[to] = swap;
+    cupSaveBusy = true;
+    saveCup({ tournaments: cups, teams: list, matches: cupMatches }, "Orden de equipos actualizado.").then(function (result) {
+      cupSaveBusy = false;
+      if (!result.ok) setStatus(result.data.error || "No se pudo guardar.");
+      else render();
+    });
+  }
+
+  function buildCupBracket() {
+    var select = document.getElementById("build-tournament");
+    var tournamentId = select ? select.value : "";
+    if (!tournamentId) return setCupError("build-error", "Elige un torneo.");
+    setCupError("build-error", "");
+    var count = cupTeams.filter(function (team) { return team.tournamentId === tournamentId; }).length;
+    var exists = cupMatches.some(function (match) { return match.tournamentId === tournamentId; });
+    var run = function () {
+      setStatus("Armando los partidos…");
+      api("/api/admin/tournaments/build", "POST", { tournamentId: tournamentId }).then(function (result) {
+        if (!result.ok) {
+          setStatus("");
+          setCupError("build-error", result.data.error || "No se pudo armar el cuadro.");
+          return;
+        }
+        cups = result.data.tournaments || [];
+        cupTeams = result.data.teams || [];
+        cupMatches = result.data.matches || [];
+        editingCupMatch = "";
+        setStatus(count + " equipos. El cuadro quedó armado.");
+        render();
+      }).catch(function () {
+        setStatus("");
+        setCupError("build-error", "No se pudo armar el cuadro.");
+      });
+    };
+    if (!exists) return run();
+    askPartnerRemove("Reemplazar partidos", "¿Reemplazar los partidos de " + cupName(tournamentId) + "?", run, "Se quitan los partidos actuales de este torneo y se arma el cuadro de nuevo.");
+  }
+
+  function buildSelectedBracket() {
+    var select = document.getElementById("selected-tournament");
+    var tournamentId = select ? select.value : "";
+    selectedBracketTournament = tournamentId;
+    var ids = selectedTeamIds();
+    if (!tournamentId) return setCupError("selected-build-error", "Elige un torneo.");
+    if (!cupFormats[ids.length]) return setCupError("selected-build-error", "El cuadro se arma con 8, 12, 16, 20 o 24 equipos.");
+    setCupError("selected-build-error", "");
+    var exists = cupMatches.some(function (match) { return match.tournamentId === tournamentId; });
+    var run = function () {
+      setStatus("Armando los partidos…");
+      api("/api/admin/tournaments/build", "POST", { tournamentId: tournamentId, teamIds: ids }).then(function (result) {
+        if (!result.ok) {
+          setStatus("");
+          setCupError("selected-build-error", result.data.error || "No se pudo armar el cuadro.");
+          return;
+        }
+        cups = result.data.tournaments || [];
+        cupTeams = result.data.teams || [];
+        cupMatches = result.data.matches || [];
+        editingCupMatch = "";
+        tournamentSheet = "partidos";
+        setStatus(ids.length + " equipos. El cuadro quedó armado en Partidos.");
+        render();
+      }).catch(function () {
+        setStatus("");
+        setCupError("selected-build-error", "No se pudo armar el cuadro.");
+      });
+    };
+    if (!exists) return run();
+    askPartnerRemove("Reemplazar partidos", "¿Reemplazar los partidos de " + cupName(tournamentId) + "?", run, "Los equipos seleccionados quedan en este torneo. Se quitan los partidos actuales y se arma el cuadro de nuevo.");
+  }
+
   function render() {
     captureBenefitEdits();
     captureSponsorEdits();
@@ -2694,8 +3483,14 @@
     }
     paintNavs();
     var site = siteTabs.filter(function (item) { return item.id === tab; })[0];
-    if (site && site.id !== "beneficios" && site.id !== "patrocinadores" && site.id !== "sedes" && site.id !== "plantilla") {
+    if (site && site.id !== "beneficios" && site.id !== "patrocinadores" && site.id !== "sedes" && site.id !== "plantilla" && site.id !== "torneos") {
       panel.innerHTML = sitePanel(site);
+      return;
+    }
+    if (tab === "torneos") {
+      panel.innerHTML = tournamentsPanel();
+      bindTournamentEditors();
+      paintTeamBracket();
       return;
     }
     if (tab === "sedes") {
@@ -2764,7 +3559,8 @@
       api("/api/admin/roster", "GET"),
       api("/api/admin/benefits", "GET"),
       api("/api/admin/sponsors", "GET"),
-      api("/api/admin/locations", "GET")
+      api("/api/admin/locations", "GET"),
+      api("/api/admin/tournaments", "GET")
     ]).then(function (results) {
       if (!results[0].ok) throw new Error("session");
       settings = results[0].data;
@@ -2773,6 +3569,9 @@
       benefits = results[3].ok ? results[3].data.benefits || [] : [];
       sponsors = results[4].ok ? results[4].data.sponsors || [] : [];
       locations = results[5].ok ? results[5].data.locations || [] : [];
+      cups = results[6].ok ? results[6].data.tournaments || [] : [];
+      cupTeams = results[6].ok ? results[6].data.teams || [] : [];
+      cupMatches = results[6].ok ? results[6].data.matches || [] : [];
       rememberBenefits();
       rememberSponsors();
     });
@@ -2877,7 +3676,7 @@
   });
 
   app.addEventListener("mousedown", function (event) {
-    if (event.target.closest("[data-event-note-cmd]")) event.preventDefault();
+    if (event.target.closest("[data-event-note-cmd], [data-cup-cmd]")) event.preventDefault();
   });
 
   var partnerPhotoDialog = document.getElementById("partner-photo-dialog");
@@ -2888,6 +3687,224 @@
   }
 
   app.addEventListener("click", function (event) {
+    var cupCmd = event.target.closest("[data-cup-cmd]");
+    if (cupCmd) {
+      var cupInput = document.getElementById(cupCmd.getAttribute("data-cup-target"));
+      if (cupInput) {
+        cupInput.focus();
+        document.execCommand(cupCmd.getAttribute("data-cup-cmd"), false, null);
+      }
+      return;
+    }
+    var matchViewTab = event.target.closest("[data-match-view]");
+    if (matchViewTab) {
+      matchView = matchViewTab.getAttribute("data-match-view");
+      render();
+      return;
+    }
+    var cupSheet = event.target.closest("[data-cup-sheet]");
+    if (cupSheet) {
+      tournamentSheet = cupSheet.getAttribute("data-cup-sheet");
+      render();
+      return;
+    }
+    if (event.target.closest("#add-cup-field")) {
+      var fieldList = document.getElementById("cup-fields");
+      if (fieldList && fieldList.querySelectorAll("input").length >= 6) setCupError("cup-error", "Un torneo admite hasta 6 canchas.");
+      else if (fieldList) {
+        setCupError("cup-error", "");
+        fieldList.insertAdjacentHTML("beforeend", cupFieldRow("", fieldList.querySelectorAll(".cup-field").length));
+      }
+      return;
+    }
+    if (event.target.closest("[data-remove-cup-field]")) {
+      var fieldRow = event.target.closest(".cup-field");
+      if (fieldRow) {
+        fieldRow.remove();
+        numberCupFields();
+      }
+      return;
+    }
+    if (event.target.closest("#cup-form-toggle")) {
+      cupFormOpen = !cupFormOpen;
+      if (!cupFormOpen) editingCup = "";
+      render();
+      return;
+    }
+    if (event.target.closest("#cancel-cup")) {
+      editingCup = "";
+      cupFormOpen = false;
+      render();
+      return;
+    }
+    var editCup = event.target.closest("[data-edit-cup]");
+    if (editCup) {
+      editingCup = editCup.getAttribute("data-edit-cup");
+      cupFormOpen = true;
+      render();
+      return;
+    }
+    var removeCup = event.target.closest("[data-remove-cup]");
+    if (removeCup) {
+      var cupId = removeCup.getAttribute("data-remove-cup");
+      var removedCup = cupById(cupId);
+      if (!removedCup) return;
+      askPartnerRemove("Quitar torneo", "¿Quitar el torneo " + removedCup.name + "?", function () {
+        var teams = cupTeams.map(function (team) {
+          if (team.tournamentId !== cupId) return team;
+          var copy = {};
+          Object.keys(team).forEach(function (key) { copy[key] = team[key]; });
+          copy.tournamentId = "";
+          return copy;
+        });
+        saveCup({
+          tournaments: cups.filter(function (item) { return item.id !== cupId; }),
+          teams: teams,
+          matches: cupMatches.filter(function (item) { return item.tournamentId !== cupId; })
+        }, "Torneo eliminado.").then(function (result) {
+          if (!result.ok) setStatus(result.data.error || "No se pudo quitar el torneo.");
+          else {
+            if (editingCup === cupId) {
+              editingCup = "";
+              cupFormOpen = false;
+            }
+            render();
+          }
+        });
+      }, "Los equipos quedan en No aplica y se quitan los partidos de este torneo.");
+      return;
+    }
+    if (event.target.closest("#team-form-toggle")) {
+      teamFormOpen = !teamFormOpen;
+      if (!teamFormOpen) {
+        editingCupTeam = "";
+        teamLogoData = "";
+        teamLogoRemoved = false;
+      }
+      render();
+      return;
+    }
+    if (event.target.closest("#cancel-team")) {
+      editingCupTeam = "";
+      teamLogoData = "";
+      teamLogoRemoved = false;
+      teamFormOpen = false;
+      render();
+      return;
+    }
+    if (event.target.closest("#team-logo-add")) {
+      var logoFile = document.getElementById("team-logo-file");
+      if (logoFile) logoFile.click();
+      return;
+    }
+    if (event.target.closest("#team-logo-edit")) {
+      var preview = document.getElementById("team-logo-preview");
+      if (preview && preview.getAttribute("src")) openTeamLogoEditor(preview.getAttribute("src"));
+      return;
+    }
+    if (event.target.closest("#team-logo-remove")) {
+      teamLogoData = "";
+      teamLogoRemoved = true;
+      paintTeamLogo();
+      return;
+    }
+    var editTeam = event.target.closest("[data-edit-team]");
+    if (editTeam) {
+      editingCupTeam = editTeam.getAttribute("data-edit-team");
+      teamLogoData = "";
+      teamLogoRemoved = false;
+      teamFormOpen = true;
+      tournamentSheet = "equipos";
+      render();
+      return;
+    }
+    var moveTeam = event.target.closest("[data-move-team]");
+    if (moveTeam) {
+      moveCupTeam(moveTeam.getAttribute("data-move-team"), Number(moveTeam.getAttribute("data-move-dir")) || 0);
+      return;
+    }
+    var removeTeam = event.target.closest("[data-remove-team]");
+    if (removeTeam) {
+      var teamId = removeTeam.getAttribute("data-remove-team");
+      var removedTeam = cupTeamById(teamId);
+      if (!removedTeam) return;
+      askPartnerRemove("Quitar equipo", "¿Quitar el equipo " + removedTeam.name + "?", function () {
+        saveCup({
+          tournaments: cups,
+          teams: cupTeams.filter(function (item) { return item.id !== teamId; }),
+          matches: cupMatches.filter(function (item) { return item.team1Id !== teamId && item.team2Id !== teamId; })
+        }, "Equipo eliminado.").then(function (result) {
+          if (!result.ok) setStatus(result.data.error || "No se pudo quitar el equipo.");
+          else {
+            if (editingCupTeam === teamId) editingCupTeam = "";
+            delete selectedCupTeams[teamId];
+            render();
+          }
+        });
+      }, "Esta acción quita el equipo, su logo y los partidos donde aparece.");
+      return;
+    }
+    if (event.target.closest("#build-bracket")) {
+      buildCupBracket();
+      return;
+    }
+    if (event.target.closest("#build-selected-bracket")) {
+      buildSelectedBracket();
+      return;
+    }
+    if (event.target.closest("#match-columns-toggle")) {
+      matchColumnsOpen = !matchColumnsOpen;
+      saveMatchColumns();
+      var matchColumns = document.querySelector(".match-board .roster-columns");
+      var matchColumnsToggle = document.getElementById("match-columns-toggle");
+      if (matchColumns) matchColumns.classList.toggle("is-collapsed", !matchColumnsOpen);
+      if (matchColumnsToggle) {
+        matchColumnsToggle.setAttribute("aria-expanded", matchColumnsOpen ? "true" : "false");
+        matchColumnsToggle.setAttribute("aria-label", matchColumnsOpen ? "Ocultar columnas" : "Mostrar columnas");
+      }
+      return;
+    }
+    if (event.target.closest("#match-tools-toggle")) {
+      matchToolsOpen = !matchToolsOpen;
+      if (!matchToolsOpen) editingCupMatch = "";
+      render();
+      return;
+    }
+    if (event.target.closest("#cancel-match")) {
+      editingCupMatch = "";
+      matchToolsOpen = false;
+      render();
+      return;
+    }
+    var editMatch = event.target.closest("[data-edit-match]");
+    if (editMatch) {
+      editingCupMatch = editMatch.getAttribute("data-edit-match");
+      matchToolsOpen = true;
+      matchView = "lista";
+      tournamentSheet = "partidos";
+      render();
+      return;
+    }
+    var removeMatch = event.target.closest("[data-remove-match]");
+    if (removeMatch) {
+      var matchId = removeMatch.getAttribute("data-remove-match");
+      var removedMatch = cupMatchById(matchId);
+      if (!removedMatch) return;
+      askPartnerRemove("Quitar partido", "¿Quitar este partido?", function () {
+        saveCup({
+          tournaments: cups,
+          teams: cupTeams,
+          matches: cupMatches.filter(function (item) { return item.id !== matchId; })
+        }, "Partido eliminado.").then(function (result) {
+          if (!result.ok) setStatus(result.data.error || "No se pudo quitar el partido.");
+          else {
+            if (editingCupMatch === matchId) editingCupMatch = "";
+            render();
+          }
+        });
+      }, "Esta acción quita el partido. No se puede deshacer.");
+      return;
+    }
     var partnerPreview = event.target.closest("[data-preview-partner]");
     if (partnerPreview && partnerPhotoDialog) {
       var partnerSource = partnerPreview.querySelector("img");
@@ -3637,6 +4654,14 @@
   }
 
   app.addEventListener("input", function (event) {
+    var matchFilter = event.target.closest("[data-match-filter]");
+    if (matchFilter && matchFilter.tagName !== "SELECT") {
+      matchFilters[matchFilter.getAttribute("data-match-filter")] = matchFilter.value;
+      var matchHead = matchFilter.closest("th");
+      if (matchHead) matchHead.classList.toggle("is-filtered", matchFilter.value.trim() !== "");
+      paintMatchRows();
+      return;
+    }
     var sponsorNameInput = event.target.closest("[data-sponsor-name]");
     if (sponsorNameInput) {
       var namedSponsor = sponsorById(sponsorNameInput.getAttribute("data-sponsor-name"));
@@ -3745,6 +4770,65 @@
   });
 
   app.addEventListener("change", function (event) {
+    var matchColumnBox = event.target.closest("[data-match-column]");
+    if (matchColumnBox) {
+      var matchColumnKey = matchColumnBox.getAttribute("data-match-column");
+      var matchVisible = matchShownColumns().length;
+      if (!matchColumnBox.checked && matchVisible <= 1) {
+        matchColumnBox.checked = true;
+        setStatus("Deja al menos una columna visible.");
+        return;
+      }
+      if (matchColumnBox.checked) delete hiddenMatchColumns[matchColumnKey];
+      else hiddenMatchColumns[matchColumnKey] = true;
+      saveMatchColumns();
+      if (status.textContent === "Deja al menos una columna visible.") setStatus("");
+      render();
+      return;
+    }
+    if (event.target.id === "bracket-cup") {
+      bracketCup = event.target.value;
+      var board = document.getElementById("bracket-board");
+      if (board) board.innerHTML = bracketCup ? bracketBoard(bracketCup) : "<p class=\"bracket-empty\">Agrega un torneo para ver el cuadro.</p>";
+      return;
+    }
+    var matchSelect = event.target.closest("select[data-match-filter]");
+    if (matchSelect) {
+      matchFilters[matchSelect.getAttribute("data-match-filter")] = matchSelect.value;
+      var matchSelectHead = matchSelect.closest("th");
+      if (matchSelectHead) matchSelectHead.classList.toggle("is-filtered", matchSelect.value !== "");
+      paintMatchRows();
+      return;
+    }
+    if (event.target.id === "selected-tournament") {
+      selectedBracketTournament = event.target.value;
+      return;
+    }
+    if (event.target.id === "team-select-all") {
+      var teamMark = event.target.checked;
+      cupTeams.forEach(function (team) {
+        if (teamMark) selectedCupTeams[team.id] = true;
+        else delete selectedCupTeams[team.id];
+      });
+      document.querySelectorAll("[data-select-team]").forEach(function (box) {
+        var teamOn = Boolean(selectedCupTeams[box.getAttribute("data-select-team")]);
+        box.checked = teamOn;
+        var teamRow = box.closest("tr");
+        if (teamRow) teamRow.classList.toggle("is-selected", teamOn);
+      });
+      paintTeamBracket();
+      return;
+    }
+    var teamBox = event.target.closest("[data-select-team]");
+    if (teamBox) {
+      var pickedTeam = teamBox.getAttribute("data-select-team");
+      if (teamBox.checked) selectedCupTeams[pickedTeam] = true;
+      else delete selectedCupTeams[pickedTeam];
+      var pickedRow = teamBox.closest("tr");
+      if (pickedRow) pickedRow.classList.toggle("is-selected", teamBox.checked);
+      paintTeamBracket();
+      return;
+    }
     if (event.target.id === "sponsor-select-all") {
       var sponsorMark = event.target.checked;
       visibleSponsors().forEach(function (item) {
@@ -4038,6 +5122,21 @@
   });
 
   app.addEventListener("submit", function (event) {
+    if (event.target.id === "cup-form") {
+      event.preventDefault();
+      submitCup(event.target);
+      return;
+    }
+    if (event.target.id === "team-form") {
+      event.preventDefault();
+      submitCupTeam(event.target);
+      return;
+    }
+    if (event.target.id === "match-form") {
+      event.preventDefault();
+      submitCupMatch(event.target);
+      return;
+    }
     if (event.target.id === "location-form") {
       event.preventDefault();
       submitLocation(event.target);
@@ -5007,6 +6106,126 @@
     var message = ids.length === 1 ? "Jugadora eliminada." : "Se eliminaron " + ids.length + " jugadoras.";
     saveRoster(players.filter(function (item) { return ids.indexOf(item.id) === -1; }), message);
   });
+
+  var logoImage = null;
+  var logoZoom = 1;
+  var logoX = 0;
+  var logoY = 0;
+  var logoDrag = null;
+  var logoBox = 320;
+
+  function logoCover() {
+    return Math.max(logoBox / logoImage.width, logoBox / logoImage.height);
+  }
+
+  function paintTeamLogoEditor() {
+    var canvas = document.getElementById("team-logo-canvas");
+    if (!canvas || !logoImage) return;
+    var context = canvas.getContext("2d");
+    var ratio = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = logoBox * ratio;
+    canvas.height = logoBox * ratio;
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+    var scale = logoCover() * logoZoom;
+    var width = logoImage.width * scale;
+    var height = logoImage.height * scale;
+    var minX = logoBox - width;
+    var minY = logoBox - height;
+    if (logoX > 0) logoX = 0;
+    if (logoY > 0) logoY = 0;
+    if (logoX < minX) logoX = minX;
+    if (logoY < minY) logoY = minY;
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, logoBox, logoBox);
+    context.drawImage(logoImage, logoX, logoY, width, height);
+  }
+
+  function setTeamLogoZoom(next) {
+    if (!logoImage) return;
+    var zoom = Math.min(3, Math.max(1, next));
+    var oldScale = logoCover() * logoZoom;
+    var nextScale = logoCover() * zoom;
+    var centerX = (logoBox / 2 - logoX) / oldScale;
+    var centerY = (logoBox / 2 - logoY) / oldScale;
+    logoZoom = zoom;
+    logoX = logoBox / 2 - centerX * nextScale;
+    logoY = logoBox / 2 - centerY * nextScale;
+    var slider = document.getElementById("team-logo-zoom");
+    if (slider) slider.value = String(zoom);
+    paintTeamLogoEditor();
+  }
+
+  function openTeamLogoEditor(src) {
+    var image = new Image();
+    image.onload = function () {
+      logoImage = image;
+      logoZoom = 1;
+      logoX = 0;
+      logoY = 0;
+      paintTeamLogoEditor();
+      var slider = document.getElementById("team-logo-zoom");
+      if (slider) slider.value = "1";
+      var status = document.getElementById("team-logo-editor-status");
+      if (status) status.textContent = "";
+      var dialog = document.getElementById("team-logo-dialog");
+      if (dialog && !dialog.open) dialog.showModal();
+    };
+    image.onerror = function () {
+      var status = document.getElementById("team-logo-status");
+      if (status) status.textContent = "El logo no se pudo abrir.";
+    };
+    image.src = src;
+  }
+
+  function closeTeamLogoEditor() {
+    logoImage = null;
+    logoDrag = null;
+    var dialog = document.getElementById("team-logo-dialog");
+    if (dialog && dialog.open) dialog.close();
+  }
+
+  function applyTeamLogoEdit() {
+    if (!logoImage) return;
+    var scale = logoCover() * logoZoom;
+    var sourceX = Math.max(0, -logoX / scale);
+    var sourceY = Math.max(0, -logoY / scale);
+    var sourceSize = logoBox / scale;
+    var output = document.createElement("canvas");
+    output.width = 800;
+    output.height = 800;
+    var context = output.getContext("2d");
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, 800, 800);
+    context.drawImage(logoImage, sourceX, sourceY, sourceSize, sourceSize, 0, 0, 800, 800);
+    teamLogoData = output.toDataURL("image/jpeg", 0.8);
+    teamLogoRemoved = false;
+    closeTeamLogoEditor();
+    paintTeamLogo();
+    var status = document.getElementById("team-logo-status");
+    if (status) status.textContent = "Logo listo. Guarda el equipo para publicarlo.";
+  }
+
+  var teamLogoCanvas = document.getElementById("team-logo-canvas");
+  teamLogoCanvas.addEventListener("pointerdown", function (event) {
+    if (!logoImage) return;
+    logoDrag = { id: event.pointerId, x: event.clientX, y: event.clientY, ox: logoX, oy: logoY };
+    teamLogoCanvas.setPointerCapture(event.pointerId);
+  });
+  teamLogoCanvas.addEventListener("pointermove", function (event) {
+    if (!logoDrag || event.pointerId !== logoDrag.id) return;
+    logoX = logoDrag.ox + (event.clientX - logoDrag.x);
+    logoY = logoDrag.oy + (event.clientY - logoDrag.y);
+    paintTeamLogoEditor();
+  });
+  teamLogoCanvas.addEventListener("pointerup", function () { logoDrag = null; });
+  teamLogoCanvas.addEventListener("pointercancel", function () { logoDrag = null; });
+  document.getElementById("team-logo-zoom").addEventListener("input", function (event) {
+    setTeamLogoZoom(Number(event.target.value) || 1);
+  });
+  document.getElementById("team-logo-zoom-out").addEventListener("click", function () { setTeamLogoZoom(logoZoom - 0.15); });
+  document.getElementById("team-logo-zoom-in").addEventListener("click", function () { setTeamLogoZoom(logoZoom + 0.15); });
+  document.getElementById("apply-team-logo").addEventListener("click", applyTeamLogoEdit);
+  document.getElementById("close-team-logo").addEventListener("click", closeTeamLogoEditor);
 
   api("/api/session", "GET").then(function (result) {
     if (!result.ok) return;

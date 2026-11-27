@@ -6,6 +6,7 @@
     patrocinadores: "patrocinadores.html",
     beneficios: "beneficios.html",
     eventos: "eventos.html",
+    torneos: "torneos.html",
     tienda: "tienda.html"
   };
 
