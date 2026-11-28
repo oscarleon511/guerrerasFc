@@ -2642,3 +2642,60 @@ form.join-card .join-actions { position: sticky; bottom: 0; }
   .header-join { padding-right: 0.7rem; padding-left: 0.55rem; }
   .hero h1 { max-width: 100%; }
 }
+
+.hero:has(.sponsor-marquee:not([hidden])) { padding-bottom: 5.4rem; }
+
+.sponsor-marquee {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 0.7rem 0;
+  padding-bottom: max(0.7rem, env(safe-area-inset-bottom));
+}
+
+.sponsor-track {
+  display: flex;
+  width: max-content;
+  align-items: center;
+  gap: 2.75rem;
+  animation: sponsor-run 90s linear infinite;
+}
+
+.sponsor-marquee:hover .sponsor-track,
+.sponsor-marquee:focus-within .sponsor-track { animation-play-state: paused; }
+
+.sponsor-track a,
+.sponsor-track span {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  height: 3.4rem;
+}
+
+.sponsor-track img {
+  display: block;
+  height: 3.2rem;
+  width: auto;
+  max-width: 9.5rem;
+  object-fit: contain;
+}
+
+@keyframes sponsor-run {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+
+@media (max-width: 900px) {
+  body:has(.sponsor-marquee:not([hidden])) .call-float {
+    bottom: calc(5.6rem + max(0.5rem, env(safe-area-inset-bottom)));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sponsor-track { animation: none; transform: none; }
+  .sponsor-marquee { overflow-x: auto; }
+}
