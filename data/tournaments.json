@@ -84,7 +84,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "08:01"
+      "time": "08:01",
+      "score1": 1,
+      "score2": 0,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-536602561f3cae06",
@@ -98,7 +103,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "08:26"
+      "time": "08:26",
+      "score1": 1,
+      "score2": 1,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-8874619eace458fd",
@@ -112,7 +122,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "08:51"
+      "time": "08:51",
+      "score1": 2,
+      "score2": 1,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-803509304121b2a8",
@@ -126,7 +141,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "09:16"
+      "time": "09:16",
+      "score1": 3,
+      "score2": 1,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-9f6f226f4eb0dadc",
@@ -140,7 +160,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "09:41"
+      "time": "09:41",
+      "score1": 2,
+      "score2": 1,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-90c3e9f0a2706bd8",
@@ -154,7 +179,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "10:06"
+      "time": "10:06",
+      "score1": 1,
+      "score2": 1,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-7e8f1166cf247c6f",
@@ -168,7 +198,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "10:31"
+      "time": "10:31",
+      "score1": 4,
+      "score2": 1,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-ffe73789051993be",
@@ -182,7 +217,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "10:56"
+      "time": "10:56",
+      "score1": 2,
+      "score2": 3,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-aba081ec8d4fc540",
@@ -196,7 +236,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "11:21"
+      "time": "11:21",
+      "score1": 3,
+      "score2": 3,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-bf2940399732dcca",
@@ -210,7 +255,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "11:46"
+      "time": "11:46",
+      "score1": 2,
+      "score2": 2,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-129311299f6292ea",
@@ -224,7 +274,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "12:11"
+      "time": "12:11",
+      "score1": 2,
+      "score2": 3,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-0752bf6b45cdc3ea",
@@ -238,7 +293,12 @@
       "label2": "",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "12:36"
+      "time": "12:36",
+      "score1": 2,
+      "score2": 1,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-9c004eeb3bd74c61",
@@ -246,13 +306,18 @@
       "stage": "semi",
       "group": "",
       "round": 1,
-      "team1Id": "",
-      "team2Id": "",
+      "team1Id": "tm-mwzao29y",
+      "team2Id": "tm-mwzb3at0",
       "label1": "1° Grupo A",
       "label2": "2° Grupo B",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "13:01"
+      "time": "13:01",
+      "score1": 2,
+      "score2": 3,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     },
     {
       "id": "m-55f6d681d4e8e680",
@@ -260,41 +325,56 @@
       "stage": "semi",
       "group": "",
       "round": 1,
-      "team1Id": "",
-      "team2Id": "",
+      "team1Id": "tm-mwzb4p1b",
+      "team2Id": "tm-mwzaseqx",
       "label1": "1° Grupo B",
       "label2": "2° Grupo A",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "13:26"
-    },
-    {
-      "id": "m-c08b330daa2702e0",
-      "tournamentId": "c-mwza9jsi",
-      "stage": "final",
-      "group": "",
-      "round": 2,
-      "team1Id": "",
-      "team2Id": "",
-      "label1": "Ganador semifinal 1",
-      "label2": "Ganador semifinal 2",
-      "field": "EL Monumental Cali Canchas Sinteticas",
-      "date": "2027-01-02",
-      "time": "13:51"
+      "time": "13:26",
+      "score1": 1,
+      "score2": 1,
+      "penalties": true,
+      "penalty1": 5,
+      "penalty2": 4
     },
     {
       "id": "m-f12e5fef3ecf85b4",
       "tournamentId": "c-mwza9jsi",
       "stage": "third",
       "group": "",
-      "round": 3,
-      "team1Id": "",
-      "team2Id": "",
+      "round": 2,
+      "team1Id": "tm-mwzao29y",
+      "team2Id": "tm-mwzaseqx",
       "label1": "Perdedor semifinal 1",
       "label2": "Perdedor semifinal 2",
       "field": "EL Monumental Cali Canchas Sinteticas",
       "date": "2027-01-02",
-      "time": "14:16"
+      "time": "13:51",
+      "score1": 1,
+      "score2": 2,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
+    },
+    {
+      "id": "m-c08b330daa2702e0",
+      "tournamentId": "c-mwza9jsi",
+      "stage": "final",
+      "group": "",
+      "round": 3,
+      "team1Id": "tm-mwzb3at0",
+      "team2Id": "tm-mwzb4p1b",
+      "label1": "Ganador semifinal 1",
+      "label2": "Ganador semifinal 2",
+      "field": "EL Monumental Cali Canchas Sinteticas",
+      "date": "2027-01-02",
+      "time": "14:16",
+      "score1": 1,
+      "score2": 0,
+      "penalties": false,
+      "penalty1": "",
+      "penalty2": ""
     }
   ]
 }

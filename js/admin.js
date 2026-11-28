@@ -56,6 +56,7 @@
     ["field", "Cancha"],
     ["date", "Fecha"],
     ["time", "Hora"],
+    ["score", "Marcador"],
     ["actions", "Acciones"]
   ];
   var hiddenMatchColumns = {};
@@ -2919,12 +2920,53 @@
     return "<span class=\"cup-mini-side\">" + logo + escapeHtml(team.name) + "</span>";
   }
 
+  function scoreText(value) {
+    return value === "" || value == null ? "" : String(value);
+  }
+
+  function scoreField(name, label, value) {
+    return "<label class=\"field\">" + label + "<input name=\"" + name + "\" type=\"number\" min=\"0\" max=\"99\" step=\"1\" inputmode=\"numeric\" value=\"" + escapeHtml(scoreText(value)) + "\"></label>";
+  }
+
+  function isKnockoutStage(stage) {
+    return stage === "r16" || stage === "quarter" || stage === "semi" || stage === "final" || stage === "third";
+  }
+
+  function scoreInputs(match) {
+    var id = escapeHtml(match.id);
+    var withdrawal = match.withdrawal === "1" || match.withdrawal === "2" ? match.withdrawal : "";
+    var postponed = match.postponed === true;
+    var tagged = Boolean(withdrawal || postponed);
+    var tied = !tagged && isKnockoutStage(match.stage) && hasScore(match.score1) && hasScore(match.score2) && Number(match.score1) === Number(match.score2);
+    var html = "<div class=\"score-cell\"><div class=\"score-pair\"><input type=\"number\" min=\"0\" max=\"99\" step=\"1\" inputmode=\"numeric\" data-score-match=\"" + id + "\" data-score-side=\"1\" aria-label=\"Goles del equipo 1\" value=\"" + escapeHtml(scoreText(match.score1)) + "\"><span>:</span><input type=\"number\" min=\"0\" max=\"99\" step=\"1\" inputmode=\"numeric\" data-score-match=\"" + id + "\" data-score-side=\"2\" aria-label=\"Goles del equipo 2\" value=\"" + escapeHtml(scoreText(match.score2)) + "\"></div>";
+    if (tied) {
+      html += "<label class=\"score-penalties\"><input type=\"checkbox\" data-score-match=\"" + id + "\" data-score-penalties=\"" + id + "\"" + (match.penalties ? " checked" : "") + "> Penales</label>";
+      html += "<div class=\"score-pair is-shootout\"" + (match.penalties ? "" : " hidden") + "><input type=\"number\" min=\"0\" max=\"99\" step=\"1\" inputmode=\"numeric\" data-score-match=\"" + id + "\" data-penalty-side=\"1\" aria-label=\"Penales del equipo 1\" value=\"" + escapeHtml(scoreText(match.penalty1)) + "\"><span>pen</span><input type=\"number\" min=\"0\" max=\"99\" step=\"1\" inputmode=\"numeric\" data-score-match=\"" + id + "\" data-penalty-side=\"2\" aria-label=\"Penales del equipo 2\" value=\"" + escapeHtml(scoreText(match.penalty2)) + "\"></div>";
+    }
+    html += "<div class=\"score-tags\"><label class=\"score-penalties\"><input type=\"checkbox\" data-score-match=\"" + id + "\" data-score-withdrawal=\"" + id + "\"" + (withdrawal ? " checked" : "") + "> Retiro</label><label class=\"score-penalties\"><input type=\"checkbox\" data-score-match=\"" + id + "\" data-score-postponed=\"" + id + "\"" + (postponed ? " checked" : "") + "> Aplazado</label></div>";
+    html += "<select class=\"score-status\" data-score-match=\"" + id + "\" data-withdrawal-side=\"" + id + "\" aria-label=\"Equipo que se retira\"" + (withdrawal ? "" : " hidden") + "><option value=\"\">Elige quién se retira</option><option value=\"1\"" + (withdrawal === "1" ? " selected" : "") + ">Se retira " + escapeHtml(matchTeamText(match.team1Id, match.label1)) + "</option><option value=\"2\"" + (withdrawal === "2" ? " selected" : "") + ">Se retira " + escapeHtml(matchTeamText(match.team2Id, match.label2)) + "</option></select>";
+    html += "<input class=\"score-note\" type=\"text\" maxlength=\"240\" data-score-match=\"" + id + "\" data-postpone-note=\"" + id + "\" placeholder=\"Motivo del aplazamiento\" aria-label=\"Motivo del aplazamiento\" value=\"" + escapeHtml(match.postponeNote || "") + "\"" + (postponed ? "" : " hidden") + ">";
+    return html + "</div>";
+  }
+
+  function readScore(value) {
+    var text = String(value == null ? "" : value).trim();
+    if (!text) return "";
+    if (!/^\d{1,2}$/.test(text)) return null;
+    var number = Number(text);
+    return number <= 99 ? number : null;
+  }
+
   function matchFormHtml() {
     var current = editingCupMatch ? cupMatchById(editingCupMatch) : null;
     var tournamentId = current ? current.tournamentId : (cups[0] ? cups[0].id : "");
     return "<form id=\"match-form\" class=\"form-grid\"><h2 class=\"wide\">" + (current ? "Editar partido" : "Nuevo partido") + "</h2><p id=\"match-error\" class=\"form-error wide\" role=\"alert\" hidden></p>" +
       "<label class=\"field wide\">Torneo<select id=\"match-tournament\" name=\"tournament\" required>" + cupSelect(tournamentId, "Elige un torneo") + "</select></label>" +
       "<div class=\"wide cup-versus\"><div class=\"cup-side\"><label class=\"field\">Equipo 1<img id=\"match-logo-1\" class=\"cup-form-logo\" alt=\"\" hidden><select id=\"match-team-1\" name=\"team1\">" + cupTeamOptions(tournamentId, current ? current.team1Id : "") + "</select></label></div><span class=\"cup-vs\">vs</span><div class=\"cup-side\"><label class=\"field\">Equipo 2<img id=\"match-logo-2\" class=\"cup-form-logo\" alt=\"\" hidden><select id=\"match-team-2\" name=\"team2\">" + cupTeamOptions(tournamentId, current ? current.team2Id : "") + "</select></label></div></div>" +
+      "<div class=\"wide cup-scores\">" + scoreField("score1", "Goles del equipo 1", current ? current.score1 : "") + scoreField("score2", "Goles del equipo 2", current ? current.score2 : "") + "</div>" +
+      (current && isKnockoutStage(current.stage) ? "<div class=\"wide score-penalties-form\"><label class=\"score-penalties\"><input type=\"checkbox\" name=\"penalties\"" + (current.penalties ? " checked" : "") + "> Definir por penales</label><div class=\"cup-scores\">" + scoreField("penalty1", "Penales del equipo 1", current.penalty1) + scoreField("penalty2", "Penales del equipo 2", current.penalty2) + "</div><p class=\"field-hint\">Márcalo cuando el partido queda empatado. El equipo con más goles en la tanda avanza.</p></div>" : "") +
+      "<div class=\"wide score-penalties-form\"><label class=\"score-penalties\"><input type=\"checkbox\" name=\"withdrawalFlag\"" + (current && (current.withdrawal === "1" || current.withdrawal === "2") ? " checked" : "") + "> Retiro</label><label class=\"field\">Quién se retira<select name=\"withdrawal\"><option value=\"\">Elige el equipo</option><option value=\"1\"" + (current && current.withdrawal === "1" ? " selected" : "") + ">Se retira el equipo 1</option><option value=\"2\"" + (current && current.withdrawal === "2" ? " selected" : "") + ">Se retira el equipo 2</option></select></label><p class=\"field-hint\">El equipo que se retira pierde el partido. El otro suma la victoria o avanza.</p><label class=\"score-penalties\"><input type=\"checkbox\" name=\"postponed\"" + (current && current.postponed ? " checked" : "") + "> Aplazado</label><label class=\"field\">Motivo del aplazamiento<input name=\"postponeNote\" maxlength=\"240\" value=\"" + escapeHtml(current && current.postponeNote ? current.postponeNote : "") + "\"></label></div>" +
+      "<p class=\"field-hint wide\">Escribe los dos goles cuando el partido ya se jugó. Si todavía no hay resultado, déjalos vacíos.</p>" +
       (current && (current.label1 || current.label2) ? "<p class=\"field-hint wide\">Clasificación: " + escapeHtml(current.label1 || "Por definir") + " vs " + escapeHtml(current.label2 || "Por definir") + ". Puedes dejar el equipo vacío hasta que se defina.</p>" : "") +
       "<label class=\"field\">Cancha<input name=\"field\" maxlength=\"80\" list=\"match-fields\" value=\"" + escapeHtml(current ? current.field : "") + "\"><datalist id=\"match-fields\"></datalist></label>" +
       "<label class=\"field\">Fecha<input name=\"date\" type=\"date\" value=\"" + escapeHtml(current ? current.date : "") + "\"></label>" +
@@ -2962,6 +3004,12 @@
       if (matchFilters.date && match.date !== matchFilters.date) return false;
       if (time && (match.time || "").toLowerCase().indexOf(time) === -1) return false;
       return true;
+    }).sort(function (a, b) {
+      var left = (a.date || "9999-99-99") + "T" + (a.time || "99:99");
+      var right = (b.date || "9999-99-99") + "T" + (b.time || "99:99");
+      if (left !== right) return left < right ? -1 : 1;
+      var rank = { group: 0, r16: 1, quarter: 2, semi: 3, third: 4, final: 5, match: 6 };
+      return (rank[a.stage] == null ? 7 : rank[a.stage]) - (rank[b.stage] == null ? 7 : rank[b.stage]);
     });
   }
 
@@ -3003,6 +3051,7 @@
     if (key === "field") return escapeHtml(match.field || "");
     if (key === "date") return escapeHtml(match.date || "");
     if (key === "time") return escapeHtml(match.time || "");
+    if (key === "score") return scoreInputs(match);
     return "<div class=\"benefit-actions\"><button class=\"btn btn-ghost\" type=\"button\" data-edit-match=\"" + escapeHtml(match.id) + "\">Editar</button><button class=\"btn btn-ghost\" type=\"button\" data-remove-match=\"" + escapeHtml(match.id) + "\">Quitar</button></div>";
   }
 
@@ -3031,7 +3080,7 @@
   }
 
   function matchToolsHtml() {
-    return "<div class=\"cup-build\"><h2>Armar el cuadro</h2><p>Con 8, 12, 16, 20 o 24 equipos se arma la fase de grupos y luego la eliminatoria. Cada victoria suma 3 puntos y un empate suma 1. Si hay empate en el grupo, se mira la diferencia de goles, los goles a favor, el resultado entre los equipos y, al final, un sorteo. En la eliminatoria, el empate se define por penales. Con hasta 6 canchas, los partidos quedan cada 25 minutos desde la fecha y la hora del torneo.</p><label class=\"field\">Torneo<select id=\"build-tournament\">" + cupSelect("", "Elige un torneo") + "</select></label><div class=\"admin-actions\"><button class=\"btn\" type=\"button\" id=\"build-bracket\">Armar partidos</button></div><p id=\"build-error\" class=\"form-error\" role=\"alert\" hidden></p></div>" + matchFormHtml();
+    return "<div class=\"cup-build\"><h2>Armar el cuadro</h2><p>Con 8, 12, 16, 20 o 24 equipos se arma la fase de grupos y luego la eliminatoria. Cada victoria suma 3 puntos y un empate suma 1. Si hay empate en el grupo, se mira la diferencia de goles, los goles a favor, el resultado entre los equipos y, al final, un sorteo. En la eliminatoria, el empate se define por penales. Con hasta 6 canchas, los partidos quedan cada 25 minutos desde la fecha y la hora del torneo. La final queda como último partido.</p><label class=\"field\">Torneo<select id=\"build-tournament\">" + cupSelect("", "Elige un torneo") + "</select></label><div class=\"admin-actions\"><button class=\"btn\" type=\"button\" id=\"build-bracket\">Armar partidos</button></div><p id=\"build-error\" class=\"form-error\" role=\"alert\" hidden></p></div>" + matchFormHtml();
   }
 
   function matchViewButton(id, label) {
@@ -3041,6 +3090,7 @@
 
   function matchHeadCell(column) {
     if (column[0] === "actions") return "<th class=\"match-col-actions\">Acciones</th>";
+    if (column[0] === "score") return "<th class=\"match-col-score\">Marcador</th>";
     if (column[0] === "stage") return matchFilterCell(column[1], "stage", "<select class=\"roster-filter\" data-match-filter=\"stage\" aria-label=\"Filtrar fase\">" + matchStageOptions() + "</select>");
     var type = column[0] === "date" ? "date" : "search";
     var extra = type === "search" ? " placeholder=\"Filtrar\"" : "";
@@ -3059,6 +3109,186 @@
     return "<div class=\"match-board\"><div class=\"benefit-table-wrap\"><table class=\"benefit-table\" id=\"match-table\"><thead><tr>" +
       columns.map(matchHeadCell).join("") +
       "</tr></thead><tbody>" + matchRows() + "</tbody></table></div><aside class=\"roster-columns" + (matchColumnsOpen ? "" : " is-collapsed") + "\" aria-labelledby=\"match-columns-title\"><div class=\"roster-columns-head\"><button type=\"button\" class=\"columns-toggle\" id=\"match-columns-toggle\" aria-expanded=\"" + (matchColumnsOpen ? "true" : "false") + "\" aria-controls=\"match-column-body\" aria-label=\"" + (matchColumnsOpen ? "Ocultar columnas" : "Mostrar columnas") + "\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M9 6l6 6-6 6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"></path></svg></button><p id=\"match-columns-title\" class=\"roster-columns-title\">Columnas</p></div><div id=\"match-column-body\"><p class=\"roster-columns-note\">Marca las columnas que quieres ver en la tabla.</p><ul>" + matchColumnPicker() + "</ul></div></aside></div>";
+  }
+
+  function matchViewPanel() {
+    if (matchView === "cuadro") return bracketPanel();
+    if (matchView === "posiciones") return standingsPanel();
+    return matchTable();
+  }
+
+  function hasScore(value) {
+    if (value === "" || value == null) return false;
+    var number = Number(value);
+    return Number.isInteger(number) && number >= 0 && number <= 99;
+  }
+
+  function matchPlayed(match) {
+    return hasScore(match.score1) && hasScore(match.score2);
+  }
+
+  function blankStanding(team) {
+    return { team: team, played: 0, won: 0, drawn: 0, lost: 0, goalsFor: 0, goalsAgainst: 0, points: 0 };
+  }
+
+  function applyStanding(row, goalsFor, goalsAgainst) {
+    row.played += 1;
+    row.goalsFor += goalsFor;
+    row.goalsAgainst += goalsAgainst;
+    if (goalsFor > goalsAgainst) {
+      row.won += 1;
+      row.points += 3;
+    } else if (goalsFor === goalsAgainst) {
+      row.drawn += 1;
+      row.points += 1;
+    } else row.lost += 1;
+  }
+
+  function applyWalkover(row, won) {
+    row.played += 1;
+    if (won) {
+      row.won += 1;
+      row.points += 3;
+    } else row.lost += 1;
+  }
+
+  function compareStanding(a, b) {
+    if (b.points !== a.points) return b.points - a.points;
+    var diffA = a.goalsFor - a.goalsAgainst;
+    var diffB = b.goalsFor - b.goalsAgainst;
+    if (diffB !== diffA) return diffB - diffA;
+    if (b.goalsFor !== a.goalsFor) return b.goalsFor - a.goalsFor;
+    return a.team.name.localeCompare(b.team.name, "es");
+  }
+
+  function standingRows(tournamentId, letter) {
+    var rows = {};
+    cupTeams.forEach(function (team) {
+      if (team.tournamentId !== tournamentId) return;
+      var inGroup = cupMatches.some(function (match) {
+        if (match.tournamentId !== tournamentId || match.stage !== "group") return false;
+        if (letter && match.group !== letter) return false;
+        return match.team1Id === team.id || match.team2Id === team.id;
+      });
+      if (letter && !inGroup) return;
+      if (!letter && !inGroup && cupMatches.some(function (match) { return match.tournamentId === tournamentId && match.stage === "group"; })) return;
+      rows[team.id] = blankStanding(team);
+    });
+    cupMatches.forEach(function (match) {
+      if (match.tournamentId !== tournamentId || match.postponed === true) return;
+      if (letter) {
+        if (match.stage !== "group" || match.group !== letter) return;
+      } else if (match.stage === "group") return;
+      else if (match.stage !== "match" && match.stage !== "group") return;
+      if (!rows[match.team1Id] || !rows[match.team2Id]) return;
+      if (match.withdrawal === "1" || match.withdrawal === "2") {
+        applyWalkover(rows[match.team1Id], match.withdrawal === "2");
+        applyWalkover(rows[match.team2Id], match.withdrawal === "1");
+        return;
+      }
+      if (!matchPlayed(match)) return;
+      applyStanding(rows[match.team1Id], Number(match.score1), Number(match.score2));
+      applyStanding(rows[match.team2Id], Number(match.score2), Number(match.score1));
+    });
+    return Object.keys(rows).map(function (id) { return rows[id]; }).sort(compareStanding);
+  }
+
+  function standingGoalDiff(row) {
+    var diff = row.goalsFor - row.goalsAgainst;
+    return diff > 0 ? "+" + diff : String(diff);
+  }
+
+  function standingsTable(title, rows) {
+    var body = rows.length ? rows.map(function (row, index) {
+      return "<tr><td>" + (index + 1) + "</td><td>" + matchSide(row.team.id, row.team.name) + "</td><td>" + row.played + "</td><td>" + row.won + "</td><td>" + row.drawn + "</td><td>" + row.lost + "</td><td>" + row.goalsFor + "</td><td>" + row.goalsAgainst + "</td><td>" + standingGoalDiff(row) + "</td><td class=\"is-points\">" + row.points + "</td></tr>";
+    }).join("") : "<tr><td colspan=\"10\">Todavía no hay equipos en esta tabla.</td></tr>";
+    return "<section class=\"standings-block\"><h3>" + escapeHtml(title) + "</h3><div class=\"benefit-table-wrap\"><table class=\"benefit-table standings-table\"><thead><tr><th>Pos</th><th>Equipo</th><th title=\"Partidos jugados\">PJ</th><th title=\"Ganados\">PG</th><th title=\"Empatados\">PE</th><th title=\"Perdidos\">PP</th><th title=\"Goles a favor\">GF</th><th title=\"Goles en contra\">GC</th><th title=\"Diferencia de goles\">DG</th><th title=\"Puntos\">Pts</th></tr></thead><tbody>" + body + "</tbody></table></div></section>";
+  }
+
+  function standingsBoard(tournamentId) {
+    var letters = [];
+    cupMatches.forEach(function (match) {
+      if (match.tournamentId === tournamentId && match.stage === "group" && match.group && letters.indexOf(match.group) === -1) letters.push(match.group);
+    });
+    letters.sort();
+    if (letters.length) return letters.map(function (letter) { return standingsTable("Grupo " + letter, standingRows(tournamentId, letter)); }).join("");
+    return standingsTable("Posiciones", standingRows(tournamentId, ""));
+  }
+
+  function standingsPanel() {
+    var tournamentId = bracketTournamentId();
+    var picker = cups.length ? "<label class=\"field\">Torneo<select id=\"standings-cup\">" + cupSelect(tournamentId, "Elige un torneo") + "</select></label>" : "";
+    var note = "<p class=\"field-hint\">La tabla cuenta los partidos de grupos con marcador. Cada victoria suma 3 puntos y un empate suma 1. Si un equipo se retira, pierde el partido y no suma goles. Un partido aplazado no entra en la tabla.</p>";
+    return picker + note + "<div id=\"standings-board\">" + (tournamentId ? standingsBoard(tournamentId) : "<p class=\"bracket-empty\">Agrega un torneo para ver la tabla.</p>") + "</div>";
+  }
+
+  function saveMatchScore(matchId) {
+    if (cupSaveBusy) return;
+    var match = cupMatchById(matchId);
+    var home = document.querySelector("[data-score-match=\"" + matchId + "\"][data-score-side=\"1\"]");
+    var away = document.querySelector("[data-score-match=\"" + matchId + "\"][data-score-side=\"2\"]");
+    if (!match || !home || !away) return;
+    var score1 = readScore(home.value);
+    var score2 = readScore(away.value);
+    if (score1 === null || score2 === null) return setStatus("El marcador debe ser un número entre 0 y 99.");
+    if ((score1 === "") !== (score2 === "")) return setStatus("Escribe los dos marcadores.");
+    var withdrawalBox = document.querySelector("[data-score-withdrawal=\"" + matchId + "\"]");
+    var withdrawalSelect = document.querySelector("[data-withdrawal-side=\"" + matchId + "\"]");
+    var postponedBox = document.querySelector("[data-score-postponed=\"" + matchId + "\"]");
+    var noteInput = document.querySelector("[data-postpone-note=\"" + matchId + "\"]");
+    var withdrawal = withdrawalBox && withdrawalBox.checked ? String(withdrawalSelect ? withdrawalSelect.value : "") : "";
+    var postponed = Boolean(postponedBox && postponedBox.checked);
+    var postponeNote = postponed ? String(noteInput ? noteInput.value : "").trim() : "";
+    if (withdrawal && postponed) return setStatus("Un partido aplazado no puede tener retiro.");
+    if (withdrawal && withdrawal !== "1" && withdrawal !== "2") return setStatus("Elige el equipo que se retira.");
+    if (withdrawal && (!match.team1Id || !match.team2Id)) return setStatus("Elige los dos equipos antes de marcar un retiro.");
+    if (postponed && !postponeNote) return setStatus("Escribe el motivo del aplazamiento.");
+    if (postponeNote.length > 240) return setStatus("El motivo admite hasta 240 caracteres.");
+    var penaltyBox = document.querySelector("[data-score-penalties=\"" + matchId + "\"]");
+    var penalties = !withdrawal && !postponed && Boolean(penaltyBox && penaltyBox.checked && score1 !== "" && score1 === score2 && isKnockoutStage(match.stage));
+    var penHome = document.querySelector("[data-score-match=\"" + matchId + "\"][data-penalty-side=\"1\"]");
+    var penAway = document.querySelector("[data-score-match=\"" + matchId + "\"][data-penalty-side=\"2\"]");
+    var penalty1 = penalties ? readScore(penHome ? penHome.value : "") : "";
+    var penalty2 = penalties ? readScore(penAway ? penAway.value : "") : "";
+    if (penalty1 === null || penalty2 === null) return setStatus("El marcador de penales debe ser un número entre 0 y 99.");
+    if (penalties && (penalty1 === "" || penalty2 === "")) return setStatus("Escribe los goles de la tanda de penales.");
+    if (penalties && penalty1 === penalty2) return setStatus("La tanda de penales debe tener un ganador.");
+    var prev1 = hasScore(match.score1) ? Number(match.score1) : "";
+    var prev2 = hasScore(match.score2) ? Number(match.score2) : "";
+    var prevPen1 = match.penalties && hasScore(match.penalty1) ? Number(match.penalty1) : "";
+    var prevPen2 = match.penalties && hasScore(match.penalty2) ? Number(match.penalty2) : "";
+    var prevWithdrawal = match.withdrawal === "1" || match.withdrawal === "2" ? match.withdrawal : "";
+    var prevNote = match.postponed ? String(match.postponeNote || "").trim() : "";
+    if (prev1 === score1 && prev2 === score2 && Boolean(match.penalties) === penalties && prevPen1 === penalty1 && prevPen2 === penalty2 && prevWithdrawal === withdrawal && Boolean(match.postponed) === postponed && prevNote === postponeNote) return;
+    var next = {};
+    Object.keys(match).forEach(function (key) { next[key] = match[key]; });
+    next.score1 = score1;
+    next.score2 = score2;
+    next.penalties = penalties;
+    next.penalty1 = penalty1;
+    next.penalty2 = penalty2;
+    next.withdrawal = withdrawal;
+    next.postponed = postponed;
+    next.postponeNote = postponeNote;
+    var list = cupMatches.map(function (item) { return item.id === matchId ? next : item; });
+    var saved = withdrawal ? "Retiro guardado." : postponed ? "Aplazamiento guardado." : penalties ? "Penales guardados." : "Marcador guardado.";
+    cupSaveBusy = true;
+    saveCup({ tournaments: cups, teams: cupTeams, matches: list }, saved).then(function (result) {
+      cupSaveBusy = false;
+      if (!result.ok) {
+        setStatus((result.data && result.data.error) || "No se pudo guardar el marcador.");
+        return;
+      }
+      paintMatchRows();
+      var standings = document.getElementById("standings-board");
+      var board = document.getElementById("bracket-board");
+      var tournamentId = bracketTournamentId();
+      if (standings) standings.innerHTML = tournamentId ? standingsBoard(tournamentId) : "<p class=\"bracket-empty\">Agrega un torneo para ver la tabla.</p>";
+      if (board) board.innerHTML = tournamentId ? bracketBoard(tournamentId) : "<p class=\"bracket-empty\">Agrega un torneo para ver el cuadro.</p>";
+    }).catch(function () {
+      cupSaveBusy = false;
+      setStatus("No se pudo guardar el marcador.");
+    });
   }
 
   function bracketTournamentId() {
@@ -3108,6 +3338,21 @@
     }).join("") + "</div><svg class=\"bracket-brace\" viewBox=\"0 0 120 28\" preserveAspectRatio=\"none\" aria-hidden=\"true\"><path d=\"M3 3v7c0 5 7 7 16 7h27c7 0 9 5 14 9 5-4 7-9 14-9h27c9 0 16-2 16-7V3\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"3\"/></svg><p>Grupo " + escapeHtml(letter) + "</p></section>";
   }
 
+  function finalChampion(tournamentId) {
+    var finals = cupMatches.filter(function (match) {
+      return match.tournamentId === tournamentId && match.stage === "final";
+    });
+    if (finals.length !== 1) return null;
+    var match = finals[0];
+    if (match.postponed === true || !match.team1Id || !match.team2Id) return null;
+    var winnerId = "";
+    if (match.withdrawal === "1") winnerId = match.team2Id;
+    else if (match.withdrawal === "2") winnerId = match.team1Id;
+    else if (hasScore(match.score1) && hasScore(match.score2) && Number(match.score1) !== Number(match.score2)) winnerId = Number(match.score1) > Number(match.score2) ? match.team1Id : match.team2Id;
+    else if (match.penalties && hasScore(match.penalty1) && hasScore(match.penalty2) && Number(match.penalty1) !== Number(match.penalty2)) winnerId = Number(match.penalty1) > Number(match.penalty2) ? match.team1Id : match.team2Id;
+    return winnerId ? cupTeamById(winnerId) : null;
+  }
+
   function bracketBoard(tournamentId) {
     var matches = cupMatches.filter(function (match) { return match.tournamentId === tournamentId; });
     if (!matches.length) return "<p class=\"bracket-empty\">Este torneo todavía no tiene partidos.</p>";
@@ -3120,7 +3365,8 @@
       if (match.stage === "group" && match.group && letters.indexOf(match.group) === -1) letters.push(match.group);
     });
     letters.sort();
-    var trophy = "<div class=\"bracket-trophy\" aria-hidden=\"true\"><svg viewBox=\"0 0 64 72\"><path d=\"M20 8h24v10c0 8-5 14-12 14s-12-6-12-14V8z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\"/><path d=\"M20 14H12c0 7 4 11 8 12M44 14h8c0 7-4 11-8 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\"/><path d=\"M32 32v8M22 54h20M25 40h14v8H25z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linejoin=\"round\"/></svg></div>";
+    var champion = finalChampion(tournamentId);
+    var trophy = "<div class=\"bracket-trophy\"><svg viewBox=\"0 0 64 72\" aria-hidden=\"true\"><path d=\"M20 8h24v10c0 8-5 14-12 14s-12-6-12-14V8z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\"/><path d=\"M20 14H12c0 7 4 11 8 12M44 14h8c0 7-4 11-8 12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\"/><path d=\"M32 32v8M22 54h20M25 40h14v8H25z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2.4\" stroke-linejoin=\"round\"/></svg>" + (champion ? "<p>Campeón</p><strong>" + escapeHtml(champion.name) + "</strong>" : "") + "</div>";
     function branch(level, index) {
       var rows = orderedStage(matches, rounds[level]);
       var match = rows[index];
@@ -3160,7 +3406,7 @@
     if (tournamentSheet === "equipos") {
       body = "<article class=\"panel-card benefits-admin\"><p>Los equipos seleccionados entran al cuadro en este orden. Sube o baja un equipo para cambiar su grupo.</p>" + teamFormSection() + "<div id=\"team-bracket-slot\">" + teamBracketBar() + "</div><div class=\"benefit-table-wrap\"><table class=\"benefit-table\"><thead><tr><th class=\"benefit-check\"><input type=\"checkbox\" id=\"team-select-all\" aria-label=\"Seleccionar todos los equipos\"></th><th>Logo</th><th>Nombre del equipo</th><th>Torneo</th><th>Acciones</th></tr></thead><tbody>" + teamRows() + "</tbody></table></div></article>";
     } else if (tournamentSheet === "partidos") {
-      body = "<article class=\"panel-card benefits-admin\">" + matchToolsSection() + "<div class=\"squad-sheets cup-view-sheets\" role=\"tablist\" aria-label=\"Vista de partidos\">" + matchViewButton("lista", "Lista") + matchViewButton("cuadro", "Cuadro") + "</div>" + (matchView === "cuadro" ? bracketPanel() : matchTable()) + "</article>";
+      body = "<article class=\"panel-card benefits-admin\">" + matchToolsSection() + "<div class=\"squad-sheets cup-view-sheets\" role=\"tablist\" aria-label=\"Vista de partidos\">" + matchViewButton("lista", "Lista") + matchViewButton("posiciones", "Posiciones") + matchViewButton("cuadro", "Cuadro") + "</div>" + matchViewPanel() + "</article>";
     } else {
       body = "<article class=\"panel-card benefits-admin\">" + tournamentFormSection() + "<div class=\"benefit-table-wrap\"><table class=\"benefit-table\"><thead><tr><th>Nombre del torneo</th><th>Lugar</th><th>Fecha</th><th>Hora</th><th>Canchas</th><th>Acciones</th></tr></thead><tbody>" + tournamentRows() + "</tbody></table></div></article>";
     }
@@ -3351,11 +3597,32 @@
     if (current && !team1Id && !current.label1) return setCupError("match-error", "Elige el equipo 1.");
     if (current && !team2Id && !current.label2) return setCupError("match-error", "Elige el equipo 2.");
     if (!field || !date || !time) return setCupError("match-error", "Escribe la cancha, la fecha y la hora.");
+    var score1 = readScore(data.get("score1"));
+    var score2 = readScore(data.get("score2"));
+    if (score1 === null || score2 === null) return setCupError("match-error", "El marcador debe ser un número entre 0 y 99.");
+    if ((score1 === "") !== (score2 === "")) return setCupError("match-error", "Escribe los dos marcadores o déjalos vacíos.");
     var current = editingCupMatch ? cupMatchById(editingCupMatch) : null;
+    var stage = current && current.stage ? current.stage : "match";
+    var withdrawalFlag = data.get("withdrawalFlag") === "on";
+    var postponed = data.get("postponed") === "on";
+    var withdrawal = withdrawalFlag ? String(data.get("withdrawal") || "") : "";
+    var postponeNote = postponed ? String(data.get("postponeNote") || "").trim() : "";
+    if (withdrawalFlag && postponed) return setCupError("match-error", "Un partido aplazado no puede tener retiro.");
+    if (withdrawalFlag && withdrawal !== "1" && withdrawal !== "2") return setCupError("match-error", "Elige el equipo que se retira.");
+    if (withdrawal && (!team1Id || !team2Id)) return setCupError("match-error", "Elige los dos equipos antes de marcar un retiro.");
+    if (postponed && !postponeNote) return setCupError("match-error", "Escribe el motivo del aplazamiento.");
+    if (postponeNote.length > 240) return setCupError("match-error", "El motivo admite hasta 240 caracteres.");
+    var penalties = !withdrawal && !postponed && data.get("penalties") === "on" && isKnockoutStage(stage) && score1 !== "" && score1 === score2;
+    var penalty1 = penalties ? readScore(data.get("penalty1")) : "";
+    var penalty2 = penalties ? readScore(data.get("penalty2")) : "";
+    if (penalty1 === null || penalty2 === null) return setCupError("match-error", "El marcador de penales debe ser un número entre 0 y 99.");
+    if (!withdrawal && !postponed && data.get("penalties") === "on" && !penalties) return setCupError("match-error", "Los penales se usan cuando el partido queda empatado.");
+    if (penalties && (penalty1 === "" || penalty2 === "")) return setCupError("match-error", "Escribe los goles de la tanda de penales.");
+    if (penalties && penalty1 === penalty2) return setCupError("match-error", "La tanda de penales debe tener un ganador.");
     var next = {
       id: current ? current.id : "m-" + Date.now().toString(36),
       tournamentId: tournamentId,
-      stage: current && current.stage ? current.stage : "match",
+      stage: stage,
       group: current ? current.group || "" : "",
       round: current && current.round ? current.round : 0,
       team1Id: team1Id,
@@ -3364,7 +3631,15 @@
       label2: current ? current.label2 || "" : "",
       field: field,
       date: date,
-      time: time
+      time: time,
+      score1: score1,
+      score2: score2,
+      penalties: penalties,
+      penalty1: penalty1,
+      penalty2: penalty2,
+      withdrawal: withdrawal,
+      postponed: postponed,
+      postponeNote: postponeNote
     };
     var list = cupMatches.map(function (item) { return item.id === next.id ? next : item; });
     if (!current) list = cupMatches.concat([next]);
@@ -4786,10 +5061,42 @@
       render();
       return;
     }
-    if (event.target.id === "bracket-cup") {
+    if (event.target.id === "bracket-cup" || event.target.id === "standings-cup") {
       bracketCup = event.target.value;
       var board = document.getElementById("bracket-board");
+      var standings = document.getElementById("standings-board");
       if (board) board.innerHTML = bracketCup ? bracketBoard(bracketCup) : "<p class=\"bracket-empty\">Agrega un torneo para ver el cuadro.</p>";
+      if (standings) standings.innerHTML = bracketCup ? standingsBoard(bracketCup) : "<p class=\"bracket-empty\">Agrega un torneo para ver la tabla.</p>";
+      return;
+    }
+    var scoreInput = event.target.closest("[data-score-match]");
+    if (scoreInput) {
+      var scoreCell = scoreInput.closest(".score-cell");
+      if (scoreInput.hasAttribute("data-score-penalties")) {
+        var shootout = scoreCell && scoreCell.querySelector(".is-shootout");
+        if (shootout) shootout.hidden = !scoreInput.checked;
+      }
+      if (scoreCell && scoreInput.hasAttribute("data-score-withdrawal")) {
+        var sideSelect = scoreCell.querySelector("[data-withdrawal-side]");
+        if (sideSelect) sideSelect.hidden = !scoreInput.checked;
+        if (scoreInput.checked) {
+          var postBox = scoreCell.querySelector("[data-score-postponed]");
+          var postNote = scoreCell.querySelector("[data-postpone-note]");
+          if (postBox) postBox.checked = false;
+          if (postNote) postNote.hidden = true;
+        }
+      }
+      if (scoreCell && scoreInput.hasAttribute("data-score-postponed")) {
+        var noteField = scoreCell.querySelector("[data-postpone-note]");
+        if (noteField) noteField.hidden = !scoreInput.checked;
+        if (scoreInput.checked) {
+          var withdrawalToggle = scoreCell.querySelector("[data-score-withdrawal]");
+          var withdrawalSide = scoreCell.querySelector("[data-withdrawal-side]");
+          if (withdrawalToggle) withdrawalToggle.checked = false;
+          if (withdrawalSide) withdrawalSide.hidden = true;
+        }
+      }
+      saveMatchScore(scoreInput.getAttribute("data-score-match"));
       return;
     }
     var matchSelect = event.target.closest("select[data-match-filter]");

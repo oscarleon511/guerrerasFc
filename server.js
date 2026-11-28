@@ -7,7 +7,7 @@ const https = require("https");
 const path = require("path");
 const { rowsFromWorkbook, rosterWorkbook } = require("./lib/sheet");
 const { base32Encode, totpMatches } = require("./lib/totp");
-const { buildBracket } = require("./lib/bracket");
+const { buildBracket, resolveKnockout } = require("./lib/bracket");
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT) || 3000;
@@ -1275,6 +1275,13 @@ function optionalClock(value) {
   return cleanClock(text) || null;
 }
 
+function optionalScore(value) {
+  if (value === "" || value === null || value === undefined) return "";
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0 || number > 99) return null;
+  return number;
+}
+
 function cleanRich(value, limit) {
   const html = cleanNotes(value);
   if (eventNoteText(html).length > limit) return null;
@@ -1419,7 +1426,37 @@ function validCup(body) {
     }
     const date = optionalDate(item.date);
     const time = optionalClock(item.time);
+    const score1 = optionalScore(item.score1);
+    const score2 = optionalScore(item.score2);
     if (date === null || time === null) return { error: "Revisa la fecha y la hora del partido." };
+    if (score1 === null || score2 === null) return { error: "El marcador debe ser un número entre 0 y 99." };
+    if ((score1 === "") !== (score2 === "")) return { error: "Escribe los dos marcadores del partido." };
+    const knockout = stage === "r16" || stage === "quarter" || stage === "semi" || stage === "final" || stage === "third";
+    let penalties = item.penalties === true;
+    let penalty1 = optionalScore(item.penalty1);
+    let penalty2 = optionalScore(item.penalty2);
+    if (penalty1 === null || penalty2 === null) return { error: "El marcador de penales debe ser un número entre 0 y 99." };
+    if (penalties) {
+      if (!knockout) return { error: "Los penales solo se usan en la eliminatoria." };
+      if (score1 === "" || score1 !== score2) return { error: "Los penales se usan cuando el partido queda empatado." };
+      if (penalty1 === "" || penalty2 === "") return { error: "Escribe los goles de la tanda de penales." };
+      if (penalty1 === penalty2) return { error: "La tanda de penales debe tener un ganador." };
+    } else {
+      penalty1 = "";
+      penalty2 = "";
+    }
+    const postponed = item.postponed === true;
+    const withdrawal = item.withdrawal === "1" || item.withdrawal === "2" ? item.withdrawal : "";
+    let postponeNote = cleanText(item.postponeNote, 240);
+    if (postponed && withdrawal) return { error: "Un partido aplazado no puede tener retiro." };
+    if (withdrawal && (!team1Id || !team2Id)) return { error: "Elige los dos equipos antes de marcar un retiro." };
+    if (postponed && !postponeNote) return { error: "Escribe el motivo del aplazamiento." };
+    if (!postponed) postponeNote = "";
+    if (postponed || withdrawal) {
+      penalties = false;
+      penalty1 = "";
+      penalty2 = "";
+    }
     matchIds[id] = true;
     matches.push({
       id: id,
@@ -1433,14 +1470,30 @@ function validCup(body) {
       label2: cleanText(item.label2, 80),
       field: cleanText(item.field, 80),
       date: date,
-      time: time
+      time: time,
+      score1: score1,
+      score2: score2,
+      penalties: penalties,
+      penalty1: penalty1,
+      penalty2: penalty2,
+      withdrawal: withdrawal,
+      postponed: postponed,
+      postponeNote: postponeNote
     });
   }
-  return { tournaments: tournaments, teams: teams, matches: matches };
+  return { tournaments: tournaments, teams: teams, matches: resolveKnockout(matches, teams) };
+}
+
+function withKnockout(cup) {
+  return {
+    tournaments: cup.tournaments,
+    teams: cup.teams,
+    matches: resolveKnockout(cup.matches, cup.teams)
+  };
 }
 
 function publicCup() {
-  const cup = storedCup();
+  const cup = withKnockout(storedCup());
   return {
     tournaments: cup.tournaments,
     teams: cup.teams.map(function (team) {
@@ -1679,7 +1732,7 @@ async function handleApi(req, res, pathname) {
     if (fs.existsSync(full) && fs.statSync(full).isFile()) fs.unlinkSync(full);
     return sendJson(res, 200, { ok: true });
   }
-  if (req.method === "GET" && pathname === "/api/admin/tournaments") return sendJson(res, 200, storedCup());
+  if (req.method === "GET" && pathname === "/api/admin/tournaments") return sendJson(res, 200, withKnockout(storedCup()));
   if (req.method === "PUT" && pathname === "/api/admin/tournaments") {
     const body = await readBody(req, 2000000);
     const cup = validCup(body);

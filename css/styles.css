@@ -72,10 +72,12 @@ a:hover { color: var(--ink); }
 
 .wrap {
   width: min(var(--max), calc(100% - 2.5rem));
+  max-width: 100%;
+  min-width: 0;
   margin-inline: auto;
 }
 
-body > main { flex: 1 0 auto; }
+body > main { flex: 1 0 auto; min-width: 0; }
 
 .site-header {
   position: sticky;
@@ -1440,7 +1442,7 @@ a.cal-event:hover .cal-more { color: var(--teal-ink); }
   .cal-day.is-today .cal-num { width: 1.6rem; height: 1.6rem; }
 }
 
-.table-wrap { overflow-x: auto; background: var(--white); border: 1px solid var(--line); }
+.table-wrap { overflow-x: auto; max-width: 100%; background: var(--white); border: 1px solid var(--line); }
 
 table { width: 100%; border-collapse: collapse; min-width: 36rem; }
 
@@ -2399,6 +2401,8 @@ form.join-card .join-actions { position: sticky; bottom: 0; }
 .cup-list { display: grid; gap: 1.5rem; }
 
 .cup-card {
+  min-width: 0;
+  max-width: 100%;
   background: var(--white);
   border: 1px solid var(--line);
   border-radius: 1rem;
@@ -2411,6 +2415,53 @@ form.join-card .join-actions { position: sticky; bottom: 0; }
 .cup-card h3 { margin-top: 1.3rem; color: var(--teal-ink); }
 
 .cup-meta, .cup-address { margin: 0.15rem 0; color: var(--slate); font-weight: 600; }
+
+.cup-champion {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 0.9rem;
+  background: var(--teal-ink);
+  color: var(--white);
+}
+
+.cup-champion p {
+  margin: 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.cup-champion div { display: flex; align-items: center; gap: 0.75rem; }
+
+.cup-champion img {
+  width: 3.2rem;
+  height: 3.2rem;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border-radius: 50%;
+  background: var(--white);
+}
+
+.cup-champion strong { font-size: 1.35rem; line-height: 1.2; }
+
+.cup-champion-badge {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--teal-ink);
+  color: var(--white);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+
+.cup-side.is-away .cup-champion-badge { margin-right: 0.4rem; margin-left: 0; }
 
 .cup-address { white-space: pre-line; }
 
@@ -2481,12 +2532,58 @@ form.join-card .join-actions { position: sticky; bottom: 0; }
   background: var(--white);
 }
 
-.cup-score {
-  color: var(--teal-ink);
+.cup-score.is-result {
+  min-width: 3.6rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.55rem;
+  background: var(--white);
+  text-align: center;
+}
+
+.cup-legend { margin: 0.15rem 0 0.2rem; color: var(--slate); font-size: 0.88rem; }
+
+.cup-table-wrap { overflow-x: auto; max-width: 100%; margin: 0.2rem 0 0.85rem; }
+
+.cup-table {
+  width: 100%;
+  min-width: 36rem;
+  border-collapse: collapse;
+  background: var(--white);
+  font-size: 0.92rem;
+}
+
+.cup-table th,
+.cup-table td {
+  padding: 0.45rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+
+.cup-table th:nth-child(2),
+.cup-table td:nth-child(2) { text-align: left; }
+
+.cup-table th { color: var(--teal-ink); font-size: 0.78rem; }
+
+.cup-table .is-points { font-weight: 700; color: var(--teal-ink); }
+
+.cup-standing-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   font-weight: 700;
 }
 
-.cup-when {
+.cup-standing-team img {
+  width: 1.6rem;
+  height: 1.6rem;
+  flex: 0 0 auto;
+  object-fit: cover;
+  border-radius: 50%;
+  background: var(--foam);
+}
+
+.cup-when,
+.cup-status {
   grid-column: 1 / -1;
   margin: 0;
   color: var(--slate);
@@ -2494,7 +2591,54 @@ form.join-card .join-actions { position: sticky; bottom: 0; }
   font-weight: 600;
 }
 
+.cup-status { font-size: 0.88rem; font-weight: 700; }
+
 @media (max-width: 640px) {
   .cup-match { grid-template-columns: 1fr; }
   .cup-side.is-away { flex-direction: row; text-align: left; }
+}
+
+@media (max-width: 900px) {
+  html { -webkit-text-size-adjust: 100%; }
+  body { overflow-x: clip; }
+  .site-header { padding-top: env(safe-area-inset-top); }
+  .nav-bar {
+    padding-left: max(0.85rem, env(safe-area-inset-left));
+    padding-right: max(0.85rem, env(safe-area-inset-right));
+  }
+  .nav-toggle { width: 2.75rem; height: 2.75rem; }
+  .menu-panel {
+    padding-left: max(1.25rem, env(safe-area-inset-left));
+    padding-right: max(1.25rem, env(safe-area-inset-right));
+    max-height: calc(100dvh - 4.75rem - env(safe-area-inset-top));
+    overflow: auto;
+  }
+  .menu-panel a { min-height: 2.75rem; display: flex; align-items: center; }
+  .wrap { width: min(var(--max), calc(100% - max(1.25rem, env(safe-area-inset-left) + env(safe-area-inset-right)))); }
+  input, select, textarea { font-size: 16px; }
+  .call-float {
+    top: auto;
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    right: max(1rem, env(safe-area-inset-right));
+    transform: none;
+  }
+  .site-footer {
+    padding-bottom: max(1.5rem, calc(env(safe-area-inset-bottom) + 1rem));
+  }
+  .benefit-hero,
+  .cal,
+  .sede-map { margin-right: 0; }
+  .cart [data-send] { max-width: none; }
+  .cup-side span,
+  .cup-champion strong,
+  .cup-when,
+  .cup-status { overflow-wrap: break-word; }
+  .cup-table-wrap,
+  .table-wrap { -webkit-overflow-scrolling: touch; }
+}
+
+@media (max-width: 380px) {
+  .brand-mark { width: 2.6rem; height: 2.6rem; }
+  .header-join { padding-right: 0.7rem; padding-left: 0.55rem; }
+  .hero h1 { max-width: 100%; }
 }
